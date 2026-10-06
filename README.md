@@ -19,7 +19,7 @@ kalender/
 ├── index.html        Struktur halaman, navbar, sidebar, dan modal
 ├── style.css         Tema pastel, layout, dan tampilan responsif
 ├── app.js            Logika kalender, CSV, pengingat, dan localStorage
-├── contoh-data.csv   File contoh untuk mencoba fitur Upload CSV
+├── contoh-data.csv   Contoh jadwal sewa (data fiktif) untuk mencoba Upload CSV
 └── README.md
 ```
 
@@ -44,26 +44,54 @@ Membuka `index.html` langsung dengan klik dua kali juga bisa, tetapi notifikasi 
 
 Pintasan keyboard: `T` hari ini, `M` `W` `D` ganti tampilan, `←` `→` geser periode, `C` buat event, `Esc` tutup popover.
 
-## Format CSV
+## Kategori
 
-Header yang dibaca (urutan bebas, huruf besar/kecil tidak berpengaruh):
+Empat kategori bawaan selalu tersedia: Pembayaran Sewa Kantor, Pembayaran Rutin, Jadwal Meeting, dan Task & Report. Kategori lain bisa ditambah tanpa batas:
 
-| Kolom | Wajib | Contoh nilai yang diterima |
+- Klik **+ Tambah kategori** di bawah **My Calendars**, atau **+ Kategori baru** langsung di form **Create**.
+- Isi nama, pilih warna, dan centang **Kategori pembayaran** jika kategori itu punya nominal, PPN/PPh, dan status Lunas (misalnya "Pembayaran Vendor"). Tanpa centang, statusnya Selesai seperti meeting.
+- Kategori tambahan bisa diedit atau dihapus lewat ikon pensil di sampingnya. Kategori bawaan tidak bisa dihapus.
+- Saat impor CSV, kolom `Kategori` yang isinya sama dengan nama kategori tambahan otomatis masuk ke kategori tersebut.
+
+Isian form menyesuaikan kategori: cabang, sub unit, tahap, dan masa sewa hanya muncul untuk Pembayaran Sewa Kantor; PPN/PPh hanya untuk kategori pembayaran.
+
+## Format CSV (bebas)
+
+Tidak ada format khusus. Aplikasi mengenali kolom dari nama header-nya, dan **hanya kolom tanggal yang wajib**. Pemisah koma, titik koma (Excel Indonesia), dan tab dikenali otomatis. Contoh file jadwal sewa yang langsung bisa diunggah:
+
+```
+No;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;Durasi_Sewa;Catatan
+1;Kantor Pusat;Gedung A;Tahap 1;15/01/2027;120,000,000;01/03/2027 - 29/02/2028;PPN: 13200000 | PPh: 0
+2;Kantor Pusat;;Tahap 2;01/12/2027;132,000,000;01/03/2028 - 28/02/2029;PPN: 14520000 | PPh: 0
+```
+
+| Isi | Nama kolom yang dikenali | Keterangan |
 |---|---|---|
-| `No` | Tidak | `1` (hanya untuk penanda baris di pratinjau) |
-| `Kategori` | Ya | `Pembayaran Sewa Kantor`, `Pembayaran Rutin`, `Jadwal Meeting`, `Task & Report`, atau kata kunci seperti `sewa`, `rutin`, `rapat`, `laporan` |
-| `Judul` | Ya | `Sewa Gedung Kantor Pusat` |
-| `Tanggal_Jatuh_Tempo` | Ya | `2026-11-05`, `05/11/2026`, `05-11-2026`, `5 Nov 2026`, `5 November 2026`, bisa ditambah jam: `2026-11-05 14:00` |
-| `Nominal_IDR` | Tidak | `25000000`, `Rp 25.000.000`, `25,000,000`, `1,5jt` |
-| `Durasi` | Tidak | kosong atau `Sepanjang hari`, `10:00-11:30`, `09:00 (45 menit)`, `60 menit`, `1,5 jam`, `1 jam 30 menit` |
-| `Catatan` | Tidak | teks bebas |
-| `Status` | Tidak | `Lunas`, `Selesai`, `Belum` (dipakai saat impor ulang hasil ekspor) |
+| Tanggal jatuh tempo (wajib) | `Tanggal_Jatuh_Tempo`, `Jatuh_Tempo`, `Tanggal`, `Tgl` | `15/01/2026`, `2026-01-15`, `15 Jan 2026`. Jika nama kolom lain, kolom berisi tanggal tetap dideteksi otomatis. |
+| Cabang | `Cabang`, `Lokasi`, `Outlet` | Sel kosong mengikuti baris di atasnya. |
+| Sub unit | `Sub_Unit`, `Unit`, `Gedung`, `Entitas` | Sel kosong mengikuti baris di atasnya selama cabangnya sama. |
+| Tahap pembayaran | `Term_Tahap`, `Term`, `Tahap`, `Termin` | Mis. `Tahap 1`, `Deposit`, `Periode 2`. |
+| Nominal | `Nominal_IDR`, `Nominal`, `Jumlah`, `DPP` | `134,000,000`, `134.000.000`, `Rp 4.750.000,00`, `1,5jt`. |
+| Masa sewa | `Durasi_Sewa`, `Masa_Sewa`, `Periode` | Rentang tanggal: `01/03/2026 - 28/02/2027`. |
+| PPN / PPh | kolom `PPN`, `PPh`, atau ditulis di Catatan | `PPN: 14740000 \| PPh: 0` di Catatan otomatis dipisah. |
+| Kategori | `Kategori` | Opsional. Jika tidak ada, kategori dipilih di layar pratinjau (file berkolom cabang/tahap/masa sewa otomatis menjadi Pembayaran Sewa Kantor). |
+| Judul | `Judul` | Opsional. Jika tidak ada, dibuat otomatis: `Sewa Pemuda Gedung A – Tahap 1`. |
+| Waktu | `Waktu`, `Jam` | Untuk meeting: `10:00-11:30`, `60 menit`. |
+| Catatan, Status | `Catatan`, `Status` | Status `Lunas`/`Selesai`/`Belum`. |
 
-Pemisah koma, titik koma (format Excel Indonesia), dan tab dikenali otomatis. Tanggal berformat `DD/MM/YYYY` dibaca sebagai hari/bulan/tahun.
+Kolom lain yang tidak dikenali tetap disimpan dan tampil sebagai info tambahan di panel detail.
 
-### Anti-duplikasi
+### Pratinjau sebelum impor
 
-Sebuah baris dianggap duplikat jika **kategori + judul + tanggal + jam mulai + nominal** sama persis dengan event yang sudah ada, atau dengan baris lain di file yang sama. Perbedaan huruf besar/kecil dan spasi ganda pada judul diabaikan. Sebelum impor, aplikasi menampilkan pratinjau berisi status setiap baris: **Baru**, **Duplikat** (dilewati otomatis), atau **Error** (beserta alasannya). Pemeriksaan yang sama juga berjalan saat menambah event lewat form.
+- **Baru**: akan diimpor.
+- **Mirip**: tanggal dan nominal sama dengan baris lain di cabang yang sama (mis. baris rekap per entitas). Tidak diimpor kecuali dicentang "Impor juga baris yang mirip".
+- **Duplikat**: sudah ada di kalender atau sama persis dengan baris lain, selalu dilewati.
+- **Perlu dicek**: tetap diimpor, tetapi ada kejanggalan, misalnya dua jatuh tempo pada tanggal yang sama untuk lokasi dan tahap yang sama dengan nominal berbeda.
+- Jika file tidak punya kolom status, jatuh tempo yang sudah lewat otomatis ditandai lunas (bisa dimatikan di pratinjau) agar tidak memenuhi daftar "Terlambat".
+
+### Ekspor
+
+**Ekspor semua ke CSV** menghasilkan file berpemisah titik koma dengan kolom `No;Kategori;Judul;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;PPN;PPh;Masa_Sewa;Waktu;Catatan;Status`, yang bisa langsung diimpor kembali.
 
 ## Tentang penyimpanan data
 

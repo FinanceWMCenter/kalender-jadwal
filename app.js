@@ -25,13 +25,30 @@
   const CHIP_H = 22;
   const CHIP_GAP = 2;
 
-  const CATEGORIES = {
+  const CATEGORIES_KEY = 'calendar.categories.v1';
+
+  // Empat kategori bawaan selalu ada. Kategori tambahan dibuat sendiri lewat "Tambah kategori".
+  const BUILTIN_CATEGORIES = {
     sewa:    { label: 'Pembayaran Sewa Kantor', short: 'Sewa',    payment: true },
     rutin:   { label: 'Pembayaran Rutin',       short: 'Rutin',   payment: true },
     meeting: { label: 'Jadwal Meeting',         short: 'Meeting', payment: false },
     task:    { label: 'Task & Report',          short: 'Task',    payment: false },
   };
-  const CAT_KEYS = Object.keys(CATEGORIES);
+  const CATEGORIES = { ...BUILTIN_CATEGORIES };
+  function catKeys() { return Object.keys(CATEGORIES); }
+  function hasCat(k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(CATEGORIES, k); }
+
+  // Pilihan warna pastel untuk kategori tambahan
+  const PALETTE = {
+    teal:   { name: 'Teal',   bg: '#D5F0EC', hover: '#C2E8E2', accent: '#3FA899', text: '#1E5C53' },
+    pink:   { name: 'Pink',   bg: '#FADDEB', hover: '#F6CBE0', accent: '#D86A9D', text: '#7D2453' },
+    orange: { name: 'Oranye', bg: '#FDE3CC', hover: '#FBD4B0', accent: '#E58C3A', text: '#7A3F0A' },
+    indigo: { name: 'Indigo', bg: '#E0E3FA', hover: '#CFD3F6', accent: '#6A72D9', text: '#2E348A' },
+    cyan:   { name: 'Biru muda', bg: '#D6EEF7', hover: '#C2E5F2', accent: '#3B9CC4', text: '#155470' },
+    lime:   { name: 'Hijau muda', bg: '#E8F2CF', hover: '#DBEBB6', accent: '#8CB23A', text: '#44591A' },
+    sand:   { name: 'Cokelat', bg: '#EFE5D8', hover: '#E6D7C4', accent: '#A98559', text: '#5A4024' },
+    slate:  { name: 'Abu-abu', bg: '#E5E8ED', hover: '#D7DBE2', accent: '#7A8494', text: '#3A4150' },
+  };
   const VIEWS = ['month', 'week', 'day'];
 
   const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -55,19 +72,29 @@
     des: 11, desember: 11, dec: 11, december: 11,
   };
 
-  // Header CSV yang dikenali (huruf kecil, spasi menjadi garis bawah)
+  // Header CSV yang dikenali (huruf kecil, spasi menjadi garis bawah).
+  // Semua kolom opsional kecuali tanggal; kolom lain yang tidak dikenali tetap disimpan sebagai info tambahan.
   const HEADER_ALIASES = {
     no: ['no', 'nomor', 'no_urut'],
     kategori: ['kategori', 'category', 'jenis', 'tipe'],
-    judul: ['judul', 'title', 'nama', 'nama_event', 'event'],
-    tanggal: ['tanggal_jatuh_tempo', 'jatuh_tempo', 'tanggal', 'tgl', 'due_date', 'date'],
-    nominal: ['nominal_idr', 'nominal', 'jumlah', 'amount', 'idr'],
-    durasi: ['durasi', 'duration', 'waktu', 'jam'],
-    catatan: ['catatan', 'keterangan', 'notes', 'note', 'deskripsi'],
-    status: ['status'],
+    judul: ['judul', 'title', 'nama', 'nama_event', 'event', 'uraian'],
+    tanggal: ['tanggal_jatuh_tempo', 'jatuh_tempo', 'tgl_jatuh_tempo', 'tanggal_bayar', 'tanggal', 'tgl', 'due_date', 'date'],
+    nominal: ['nominal_idr', 'nominal', 'jumlah', 'amount', 'idr', 'nilai', 'dpp', 'harga_sewa', 'biaya'],
+    periode: ['durasi_sewa', 'masa_sewa', 'periode_sewa', 'periode', 'masa_berlaku', 'jangka_waktu', 'periode_kontrak'],
+    waktu: ['waktu', 'jam', 'durasi', 'duration'],
+    cabang: ['cabang', 'lokasi', 'branch', 'outlet', 'site', 'klinik'],
+    unit: ['sub_unit', 'subunit', 'unit', 'gedung', 'lantai', 'entitas', 'pt'],
+    tahap: ['term_tahap', 'term', 'tahap', 'termin', 'pembayaran_ke'],
+    ppn: ['ppn', 'ppn_idr', 'vat'],
+    pph: ['pph', 'pph_idr', 'pph_4_2', 'pph42', 'pph_23', 'pph23'],
+    catatan: ['catatan', 'keterangan', 'notes', 'note', 'deskripsi', 'memo'],
+    status: ['status', 'status_bayar'],
   };
-  const REQUIRED_HEADERS = { kategori: 'Kategori', judul: 'Judul', tanggal: 'Tanggal_Jatuh_Tempo' };
-  const CSV_HEADER = ['No', 'Kategori', 'Judul', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'Durasi', 'Catatan'];
+  const COL_LABELS = {
+    no: 'No', kategori: 'Kategori', judul: 'Judul', tanggal: 'Jatuh tempo', nominal: 'Nominal', periode: 'Masa sewa',
+    waktu: 'Waktu', cabang: 'Cabang', unit: 'Sub unit', tahap: 'Tahap', ppn: 'PPN', pph: 'PPh', catatan: 'Catatan', status: 'Status',
+  };
+  const EXPORT_HEADER = ['No', 'Kategori', 'Judul', 'Cabang', 'Sub_Unit', 'Term_Tahap', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'PPN', 'PPh', 'Masa_Sewa', 'Waktu', 'Catatan', 'Status'];
 
   const ICON = {
     chevL: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
@@ -78,6 +105,11 @@
     money: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/></svg>',
     note: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 19h4"/></svg>',
     status: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+    layers: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+    range: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7 15h10"/></svg>',
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
     repeat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
   };
 
@@ -89,7 +121,7 @@
     view: 'month',
     cursor: startOfDay(new Date()),   // tanggal yang sedang difokuskan
     miniCursor: null,                 // bulan yang tampil di kalender kecil
-    filters: { sewa: true, rutin: true, meeting: true, task: true },
+    filters: {},                      // kategori yang disembunyikan bernilai false
     showDone: true,
     leftOpen: true,
     rightOpen: false,
@@ -205,13 +237,134 @@
 
   function sel(id) { return CSS.escape(String(id)); }
 
+  function filterOn(k) { return state.filters[k] !== false; }
+
+  /* -----------------------------------------------------------
+     3b. KATEGORI TAMBAHAN
+     ----------------------------------------------------------- */
+  function loadCategories() {
+    try {
+      const arr = JSON.parse(storageGet(CATEGORIES_KEY) || '[]');
+      if (!Array.isArray(arr)) return;
+      arr.forEach((c) => {
+        if (!c || !/^c[a-z0-9]+$/.test(c.key || '') || hasCat(c.key)) return;
+        const label = String(c.label || '').trim().slice(0, 40);
+        if (!label) return;
+        CATEGORIES[c.key] = { label, short: label, payment: Boolean(c.payment), color: PALETTE[c.color] ? c.color : 'slate', custom: true };
+      });
+    } catch (err) { /* data kategori rusak diabaikan */ }
+  }
+
+  function saveCategories() {
+    const custom = catKeys().filter((k) => CATEGORIES[k].custom)
+      .map((k) => ({ key: k, label: CATEGORIES[k].label, payment: CATEGORIES[k].payment, color: CATEGORIES[k].color }));
+    storageSet(CATEGORIES_KEY, JSON.stringify(custom));
+  }
+
+  // Warna kategori tambahan disuntikkan sebagai CSS; :not(.is-done) agar status selesai tetap sage green
+  function renderCategoryStyles() {
+    let tag = document.getElementById('categoryStyles');
+    if (!tag) {
+      tag = document.createElement('style');
+      tag.id = 'categoryStyles';
+      document.head.appendChild(tag);
+    }
+    tag.textContent = catKeys().filter((k) => CATEGORIES[k].custom).map((k) => {
+      const c = PALETTE[CATEGORIES[k].color] || PALETTE.slate;
+      return `.cat-${k}:not(.is-done){--c-bg:${c.bg};--c-bg-hover:${c.hover};--c-accent:${c.accent};--c-text:${c.text};}`;
+    }).join('\n');
+  }
+
+  function findCategoryByLabel(label, exceptKey) {
+    const n = normalizeText(label);
+    return catKeys().find((k) => k !== exceptKey && (normalizeText(CATEGORIES[k].label) === n || normalizeText(CATEGORIES[k].short) === n)) || null;
+  }
+
+  let editingCategory = null;
+  let categoryCallback = null;
+
+  function openCategoryModal(key, onSaved) {
+    editingCategory = key || null;
+    categoryCallback = onSaved || null;
+    const c = key ? CATEGORIES[key] : null;
+    const used = new Set(catKeys().map((k) => CATEGORIES[k].color).filter(Boolean));
+    const color = c ? c.color : (Object.keys(PALETTE).find((x) => !used.has(x)) || 'teal');
+    els.categoryModalTitle.textContent = c ? 'Edit kategori' : 'Kategori baru';
+    els.cName.value = c ? c.label : '';
+    els.cPayment.checked = Boolean(c && c.payment);
+    els.cColors.innerHTML = Object.entries(PALETTE).map(([k, v]) => `<label class="swatch" title="${v.name}" style="--sw:${v.accent};--sw-bg:${v.bg}">`
+      + `<input type="radio" name="catColor" value="${k}" ${k === color ? 'checked' : ''} aria-label="${v.name}"><span></span></label>`).join('');
+    els.cDelete.hidden = !c;
+    els.cError.textContent = '';
+    els.categoryModal.showModal();
+    setTimeout(() => els.cName.focus(), 0);
+  }
+
+  function saveCategory(e) {
+    e.preventDefault();
+    const label = els.cName.value.trim().replace(/\s+/g, ' ');
+    if (!label) { els.cError.textContent = 'Nama kategori wajib diisi.'; els.cName.focus(); return; }
+    if (findCategoryByLabel(label, editingCategory)) { els.cError.textContent = 'Nama kategori sudah dipakai.'; els.cName.focus(); return; }
+    const picked = els.cColors.querySelector('input[name="catColor"]:checked');
+    const color = picked ? picked.value : 'slate';
+    const key = editingCategory || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    CATEGORIES[key] = { label: label.slice(0, 40), short: label.slice(0, 40), payment: els.cPayment.checked, color, custom: true };
+    saveCategories();
+    renderCategoryStyles();
+    els.categoryModal.close();
+    const cb = categoryCallback;
+    categoryCallback = null;
+    render();
+    if (cb) cb(key);
+    toast(editingCategory ? 'Kategori diperbarui' : `Kategori "${label}" ditambahkan`);
+  }
+
+  async function deleteCategory() {
+    const key = editingCategory;
+    if (!hasCat(key) || !CATEGORIES[key].custom) return;
+    const cat = CATEGORIES[key];
+    const related = state.events.filter((ev) => ev.kategori === key);
+    els.categoryModal.close();
+    const choice = await askConfirm({
+      title: `Hapus kategori "${cat.label}"?`,
+      message: related.length
+        ? `${related.length} event di kategori ini ikut terhapus.`
+        : 'Kategori ini belum punya event.',
+      buttons: [{ label: 'Batal', value: null }, { label: 'Hapus kategori', value: 'delete', variant: 'danger' }],
+    });
+    if (choice !== 'delete') return;
+    delete CATEGORIES[key];
+    state.events = state.events.filter((ev) => ev.kategori !== key);
+    if (related.some((ev) => ev.id === state.selectedId)) state.selectedId = null;
+    if (state.lastKategori === key) state.lastKategori = 'meeting';
+    saveCategories();
+    saveEvents();
+    renderCategoryStyles();
+    render();
+    toast('Kategori dihapus', {
+      action: 'Urungkan',
+      onAction: () => {
+        CATEGORIES[key] = cat;
+        state.events.push(...related);
+        saveCategories(); saveEvents(); renderCategoryStyles(); render();
+      },
+    });
+  }
+
   /* -----------------------------------------------------------
      4. MODEL EVENT & PENYIMPANAN
      ----------------------------------------------------------- */
+  function toAmount(v) {
+    const n = v === null || v === undefined || v === '' ? NaN : Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  }
+  function toISODate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : ''; }
+  function cleanText(v, max) { return String(v ?? '').trim().slice(0, max); }
+
   function normalizeEvent(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const kategori = CAT_KEYS.includes(raw.kategori) ? raw.kategori : null;
-    const tanggal = /^\d{4}-\d{2}-\d{2}$/.test(raw.tanggal || '') ? raw.tanggal : null;
+    const kategori = hasCat(raw.kategori) ? raw.kategori : null;
+    const tanggal = toISODate(raw.tanggal) || null;
     const judul = String(raw.judul ?? '').trim();
     if (!kategori || !tanggal || !judul) return null;
 
@@ -222,8 +375,16 @@
       durasi = clamp(Math.round(Number(raw.durasi) || 60), 15, Math.max(15, maxDur));
     }
 
-    const nomNum = raw.nominal === null || raw.nominal === undefined || raw.nominal === '' ? NaN : Number(raw.nominal);
-    const nominal = Number.isFinite(nomNum) && nomNum > 0 ? Math.round(nomNum) : null;
+    let periodeMulai = toISODate(raw.periodeMulai);
+    let periodeSelesai = toISODate(raw.periodeSelesai);
+    if (!periodeMulai || !periodeSelesai) { periodeMulai = ''; periodeSelesai = ''; }
+
+    const extra = Array.isArray(raw.extra)
+      ? raw.extra
+        .filter((x) => x && String(x.label ?? '').trim() && String(x.value ?? '').trim())
+        .map((x) => ({ label: cleanText(x.label, 60), value: cleanText(x.value, 300) }))
+        .slice(0, 12)
+      : [];
 
     return {
       id: String(raw.id || uid()),
@@ -232,14 +393,38 @@
       tanggal,
       mulai,
       durasi,
-      nominal,
+      nominal: toAmount(raw.nominal),
       catatan: String(raw.catatan ?? '').trim(),
+      cabang: cleanText(raw.cabang, 80),
+      unit: cleanText(raw.unit, 80),
+      tahap: cleanText(raw.tahap, 80),
+      periodeMulai,
+      periodeSelesai,
+      ppn: toAmount(raw.ppn),
+      pph: toAmount(raw.pph),
+      extra,
       selesai: Boolean(raw.selesai),
       selesaiPada: raw.selesai ? (raw.selesaiPada || new Date().toISOString()) : null,
       sumber: raw.sumber === 'csv' ? 'csv' : 'manual',
       seriesId: raw.seriesId || null,
       dibuat: raw.dibuat || new Date().toISOString(),
     };
+  }
+
+  // Judul otomatis untuk data tanpa kolom judul, contoh: "Sewa Pemuda Gedung A – Tahap 1"
+  function buildTitle({ kategori, cabang, unit, tahap }) {
+    const loc = [cabang, unit].filter(Boolean).join(' ');
+    if (!loc && !tahap) return '';
+    const base = loc ? `${kategori === 'sewa' ? 'Sewa ' : ''}${loc}` : CATEGORIES[kategori].short;
+    return tahap ? `${base} – ${tahap}` : base;
+  }
+
+  // Kunci "mirip": kategori + tanggal + nominal + kata pertama nama cabang
+  function simKey(ev) {
+    if (!ev.nominal) return null;
+    const base = normalizeText(ev.cabang || ev.judul).replace(/^sewa\s+/, '');
+    const token = base.split(/[\s,()–-]+/)[0];
+    return token ? [ev.kategori, ev.tanggal, ev.nominal, token].join('|') : null;
   }
 
   // Kunci anti-duplikasi: kategori + judul + tanggal + jam mulai + nominal
@@ -277,10 +462,10 @@
     try {
       const p = JSON.parse(storageGet(PREFS_KEY) || '{}');
       if (VIEWS.includes(p.view)) state.view = p.view;
-      if (p.filters) CAT_KEYS.forEach((k) => { if (typeof p.filters[k] === 'boolean') state.filters[k] = p.filters[k]; });
+      if (p.filters) catKeys().forEach((k) => { if (p.filters[k] === false) state.filters[k] = false; });
       if (typeof p.showDone === 'boolean') state.showDone = p.showDone;
       if (typeof p.leftOpen === 'boolean' && !isMobile()) state.leftOpen = p.leftOpen;
-      if (CAT_KEYS.includes(p.lastKategori)) state.lastKategori = p.lastKategori;
+      if (hasCat(p.lastKategori)) state.lastKategori = p.lastKategori;
     } catch (err) { /* preferensi rusak diabaikan */ }
   }
 
@@ -294,7 +479,7 @@
     }));
   }
 
-  function isVisible(ev) { return state.filters[ev.kategori] && (state.showDone || !ev.selesai); }
+  function isVisible(ev) { return filterOn(ev.kategori) && (state.showDone || !ev.selesai); }
 
   // Urutan dalam satu hari: event sepanjang hari dulu, lalu berdasarkan jam
   function sortEvents(a, b) {
@@ -337,9 +522,9 @@
     const now = new Date().toISOString();
 
     const list = [
-      { kategori: 'sewa', judul: 'Sewa Gedung Kantor Pusat', tanggal: D(0, 5), nominal: 25000000, catatan: 'Transfer ke rekening pemilik gedung. Minta kuitansi bermeterai.' },
-      { kategori: 'sewa', judul: 'Sewa Ruko Cabang Selatan', tanggal: D(0, 20), nominal: 18500000, catatan: 'Kontrak berakhir Desember, siapkan negosiasi perpanjangan.' },
-      { kategori: 'sewa', judul: 'Sewa Ruko Cabang Selatan', tanggal: D(-1, 20), nominal: 18500000 },
+      { kategori: 'sewa', judul: 'Sewa Kantor Pusat Gedung A – Tahun 2', cabang: 'Kantor Pusat', unit: 'Gedung A', tahap: 'Tahun 2', tanggal: D(0, 5), nominal: 25000000, ppn: 2750000, periodeMulai: D(1, 1), periodeSelesai: toISO(addDays(parseISO(D(13, 1)), -1)), catatan: 'Minta kuitansi bermeterai.' },
+      { kategori: 'sewa', judul: 'Sewa Cabang Selatan – Periode 3', cabang: 'Cabang Selatan', tahap: 'Periode 3', tanggal: D(0, 20), nominal: 18500000, pph: 1850000, periodeMulai: D(2, 1), periodeSelesai: toISO(addDays(parseISO(D(14, 1)), -1)), catatan: 'Kontrak berakhir tahun depan, siapkan negosiasi perpanjangan.' },
+      { kategori: 'sewa', judul: 'Sewa Cabang Selatan – Periode 2', cabang: 'Cabang Selatan', tahap: 'Periode 2', tanggal: D(-1, 20), nominal: 18500000, pph: 1850000 },
       { kategori: 'sewa', judul: 'Sewa Gudang Arsip', tanggal: D(1, 1), nominal: 6000000 },
       { kategori: 'rutin', judul: 'Tagihan Listrik & Air', tanggal: D(0, 10), nominal: 4750000, catatan: 'Bayar via internet banking, simpan bukti di folder keuangan.' },
       { kategori: 'rutin', judul: 'Tagihan Listrik & Air', tanggal: D(-1, 10), nominal: 4600000 },
@@ -662,14 +847,16 @@
   function renderFilters() {
     const ym = toISO(state.cursor).slice(0, 7);
     const counts = {};
-    CAT_KEYS.forEach((k) => { counts[k] = 0; });
+    catKeys().forEach((k) => { counts[k] = 0; });
     state.events.forEach((ev) => { if (ev.tanggal.startsWith(ym)) counts[ev.kategori] += 1; });
 
-    els.calFilters.innerHTML = CAT_KEYS.map((k) => `<li><label class="cal-filter cat-${k}">`
-      + `<input type="checkbox" class="chk chk--lg" data-filter="${k}" ${state.filters[k] ? 'checked' : ''}>`
-      + `<span class="cal-filter__name">${CATEGORIES[k].label}</span>`
+    els.calFilters.innerHTML = catKeys().map((k) => `<li class="cal-filter-item"><label class="cal-filter cat-${k}">`
+      + `<input type="checkbox" class="chk chk--lg" data-filter="${k}" ${filterOn(k) ? 'checked' : ''}>`
+      + `<span class="cal-filter__name">${escapeHTML(CATEGORIES[k].label)}</span>`
       + `<span class="cal-filter__count" title="Jumlah di ${MONTHS[state.cursor.getMonth()]}">${counts[k]}</span>`
-      + '</label></li>').join('');
+      + '</label>'
+      + (CATEGORIES[k].custom ? `<button type="button" class="icon-btn icon-btn--xs cal-filter__edit" data-action="edit-category" data-cat="${k}" aria-label="Edit kategori ${escapeHTML(CATEGORIES[k].label)}">${ICON.pencil}</button>` : '')
+      + '</li>').join('');
     els.chkShowDone.checked = state.showDone;
   }
 
@@ -677,7 +864,7 @@
   function renderSummary() {
     const c = state.cursor;
     const ym = toISO(c).slice(0, 7);
-    const inMonth = state.events.filter((ev) => ev.tanggal.startsWith(ym) && state.filters[ev.kategori]);
+    const inMonth = state.events.filter((ev) => ev.tanggal.startsWith(ym) && filterOn(ev.kategori));
     const pay = inMonth.filter((ev) => CATEGORIES[ev.kategori].payment);
     const work = inMonth.filter((ev) => !CATEGORIES[ev.kategori].payment);
     const total = pay.reduce((s, ev) => s + (ev.nominal || 0), 0);
@@ -692,13 +879,13 @@
       + `<div class="progress" role="progressbar" aria-label="Persentase tagihan lunas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>`
       + `<div class="sum-row"><span>Lunas (${paidCount} dari ${pay.length})</span><strong>${fmtIDR(paid)}</strong></div>`
       + `<div class="sum-row"><span>Belum lunas</span><strong>${fmtIDR(total - paid)}</strong></div>`
-      + `<div class="sum-row"><span>Meeting &amp; task selesai</span><strong>${workDone} dari ${work.length}</strong></div>`;
+      + `<div class="sum-row"><span>Agenda lain selesai</span><strong>${workDone} dari ${work.length}</strong></div>`;
   }
 
   /* ---------- Pengingat H-30 sampai Hari-H ---------- */
   function computeReminders() {
     return state.events
-      .filter((ev) => state.filters[ev.kategori] && !ev.selesai)
+      .filter((ev) => filterOn(ev.kategori) && !ev.selesai)
       .map((ev) => ({ ev, d: daysUntil(ev.tanggal) }))
       .filter((x) => x.d <= REMINDER_DAYS)
       .sort((a, b) => a.d - b.d || sortEvents(a.ev, b.ev));
@@ -762,7 +949,21 @@
     els.panelReminders.innerHTML = html;
   }
 
-  /* ---------- Detail event ---------- */
+  /* ---------- Detail event (hanya menampilkan isian yang ada) ---------- */
+  function detailRow(icon, label, valueHTML) {
+    return `<div class="drow"><dt class="ico">${icon}</dt><dd><span class="drow__label">${label}</span><div class="drow__value">${valueHTML}</div></dd></div>`;
+  }
+
+  function periodHTML(ev) {
+    if (!ev.periodeMulai || !ev.periodeSelesai) return '';
+    const a = parseISO(ev.periodeMulai);
+    const b = parseISO(ev.periodeSelesai);
+    const months = Math.round(diffDays(a, addDays(b, 1)) / 30.4375);
+    let len = '';
+    if (months > 0) len = months % 12 === 0 ? `${months / 12} tahun` : `${months} bulan`;
+    return `${fmtDateMedium(a)} – ${fmtDateMedium(b)}${len ? ` <span class="muted">(${len})</span>` : ''}`;
+  }
+
   function renderDetail() {
     const ev = getEvent(state.selectedId);
     if (!ev) {
@@ -774,30 +975,46 @@
     const diff = daysUntil(ev.tanggal);
     const id = escapeHTML(ev.id);
     const word = doneWord(ev);
+    const rows = [];
 
-    let rel = '';
-    if (!ev.selesai) rel = `<span class="rel-badge tone-${toneFor(diff)}">${relativeLabel(diff)}</span>`;
+    const rel = ev.selesai ? '' : ` <span class="rel-badge tone-${toneFor(diff)}">${relativeLabel(diff)}</span>`;
+    rows.push(detailRow(ICON.calendar, cat.payment ? 'Jatuh tempo' : 'Tanggal', `${fmtDateLong(d)}${rel}`));
+    if (ev.mulai) rows.push(detailRow(ICON.clock, 'Waktu', `${fmtTimeRange(ev)} <span class="muted">(${fmtDuration(ev.durasi)})</span>`));
 
-    const series = ev.seriesId ? state.events.filter((e) => e.seriesId === ev.seriesId).sort((a, b) => a.tanggal.localeCompare(b.tanggal)) : [];
-    const pos = series.findIndex((e) => e.id === ev.id) + 1;
+    const lokasi = [ev.cabang, ev.unit].filter(Boolean).map(escapeHTML).join(', ');
+    if (lokasi) rows.push(detailRow(ICON.pin, 'Lokasi', lokasi));
+    if (ev.tahap) rows.push(detailRow(ICON.layers, 'Tahap pembayaran', escapeHTML(ev.tahap)));
+    const period = periodHTML(ev);
+    if (period) rows.push(detailRow(ICON.range, ev.kategori === 'sewa' ? 'Masa sewa' : 'Periode', period));
+
+    if (ev.nominal || ev.ppn || ev.pph) {
+      const taxes = [];
+      if (ev.ppn) taxes.push(`<div class="tax-line"><span>PPN</span><span>${fmtIDR(ev.ppn)}</span></div>`);
+      if (ev.pph) taxes.push(`<div class="tax-line"><span>PPh</span><span>${fmtIDR(ev.pph)}</span></div>`);
+      const main = ev.nominal ? `<span class="amount">${fmtIDR(ev.nominal)}</span>` : '<span class="muted">Belum diisi</span>';
+      rows.push(detailRow(ICON.money, 'Nominal', main + (taxes.length ? `<div class="tax-lines">${taxes.join('')}</div>` : '')));
+    }
+
+    ev.extra.forEach((x) => rows.push(detailRow(ICON.info, escapeHTML(x.label), escapeHTML(x.value))));
+    if (ev.catatan) rows.push(detailRow(ICON.note, 'Catatan', `<span class="pre">${escapeHTML(ev.catatan)}</span>`));
 
     let doneAt = '';
     if (ev.selesai && ev.selesaiPada) {
       const t = new Date(ev.selesaiPada);
-      if (!Number.isNaN(t.getTime())) doneAt = `<span class="muted small">pada ${fmtDateMedium(t)}, ${pad2(t.getHours())}:${pad2(t.getMinutes())}</span>`;
+      if (!Number.isNaN(t.getTime())) doneAt = ` <span class="muted small">pada ${fmtDateMedium(t)}, ${pad2(t.getHours())}:${pad2(t.getMinutes())}</span>`;
+    }
+    rows.push(detailRow(ICON.status, 'Status', `<span class="status-pill${ev.selesai ? ' is-done' : ''}">${statusText(ev)}</span>${doneAt}`));
+
+    const series = ev.seriesId ? state.events.filter((e) => e.seriesId === ev.seriesId).sort((a, b) => a.tanggal.localeCompare(b.tanggal)) : [];
+    if (series.length > 1) {
+      const pos = series.findIndex((e) => e.id === ev.id) + 1;
+      rows.push(detailRow(ICON.repeat, 'Pengulangan', `Kejadian ke-${pos} dari ${series.length}`));
     }
 
     els.panelDetail.innerHTML = `<article class="detail cat-${ev.kategori}${ev.selesai ? ' is-done' : ''}">`
-      + `<div class="detail__band">${cat.label}</div>`
+      + `<div class="detail__band">${escapeHTML(cat.label)}</div>`
       + `<h3 class="detail__title">${escapeHTML(ev.judul)}</h3>`
-      + '<dl class="detail__list">'
-      + `<div class="drow"><dt class="ico">${ICON.calendar}<span class="sr-only">Tanggal</span></dt><dd>${fmtDateLong(d)} ${rel}</dd></div>`
-      + `<div class="drow"><dt class="ico">${ICON.clock}<span class="sr-only">Waktu</span></dt><dd>${ev.mulai ? `${fmtTimeRange(ev)} <span class="muted">(${fmtDuration(ev.durasi)})</span>` : 'Sepanjang hari'}</dd></div>`
-      + (ev.nominal ? `<div class="drow"><dt class="ico">${ICON.money}<span class="sr-only">Nominal</span></dt><dd><span class="amount">${fmtIDR(ev.nominal)}</span></dd></div>` : '')
-      + `<div class="drow"><dt class="ico">${ICON.note}<span class="sr-only">Catatan</span></dt><dd class="pre${ev.catatan ? '' : ' muted'}">${ev.catatan ? escapeHTML(ev.catatan) : 'Tidak ada catatan'}</dd></div>`
-      + `<div class="drow"><dt class="ico">${ICON.status}<span class="sr-only">Status</span></dt><dd><span class="status-pill${ev.selesai ? ' is-done' : ''}">${statusText(ev)}</span>${doneAt}</dd></div>`
-      + (series.length > 1 ? `<div class="drow"><dt class="ico">${ICON.repeat}<span class="sr-only">Pengulangan</span></dt><dd>Seri berulang, kejadian ke-${pos} dari ${series.length}</dd></div>` : '')
-      + '</dl>'
+      + `<dl class="detail__list">${rows.join('')}</dl>`
       + `<p class="detail__source">${ev.sumber === 'csv' ? 'Diimpor dari CSV' : 'Dibuat manual'}</p>`
       + '<div class="detail__actions">'
       + `<button type="button" class="btn ${ev.selesai ? 'btn--outline' : 'btn--primary'} btn--block" data-action="toggle-status" data-id="${id}">${ev.selesai ? `Batalkan status ${word.toLowerCase()}` : `Tandai ${word.toLowerCase()}`}</button>`
@@ -957,7 +1174,7 @@
     if (!ev) return;
     const d = parseISO(ev.tanggal);
     if (!isInView(d)) { state.cursor = d; syncMini(); }
-    state.filters[ev.kategori] = true;
+    delete state.filters[ev.kategori];
     if (ev.selesai) state.showDone = true;
     state.selectedId = id;
     state.rightOpen = true;
@@ -1104,10 +1321,18 @@
      8. MODAL FORM EVENT
      ----------------------------------------------------------- */
   function buildCategoryOptions() {
-    els.fKategori.innerHTML = CAT_KEYS.map((k) => `<label class="cat-opt cat-${k}">`
+    els.fKategori.innerHTML = catKeys().map((k) => `<label class="cat-opt cat-${k}">`
       + `<input type="radio" name="kategori" value="${k}">`
       + '<span class="cat-opt__dot" aria-hidden="true"></span>'
-      + `<span>${CATEGORIES[k].label}</span></label>`).join('');
+      + `<span>${escapeHTML(CATEGORIES[k].label)}</span></label>`).join('')
+      + '<button type="button" class="cat-opt cat-opt--add" data-action="new-category-from-form">+ Kategori baru</button>';
+  }
+
+  // Bangun ulang pilihan kategori di form tanpa menghapus isian lain
+  function buildCategoryOptionsKeep(selectKey) {
+    buildCategoryOptions();
+    setRadio(selectKey);
+    updateStatusLabel();
   }
 
   function getRadio() {
@@ -1120,6 +1345,20 @@
       r.checked = r.value === value;
       r.closest('.cat-opt').classList.toggle('is-checked', r.checked);
     });
+    updateCategoryFields();
+  }
+
+  // Isian khusus hanya muncul untuk kategori yang membutuhkannya
+  function updateCategoryFields() {
+    const k = getRadio();
+    els.sewaFields.hidden = k !== 'sewa';
+    els.taxRow.hidden = !CATEGORIES[k].payment;
+    els.fJudul.placeholder = k === 'sewa' ? 'Judul (boleh kosong, dibuat dari cabang & tahap)' : 'Tambahkan judul';
+  }
+
+  function moneyValue(input) {
+    const digits = input.value.replace(/\D/g, '');
+    return digits ? Number(digits) : null;
   }
 
   function updateTimeRow() {
@@ -1156,9 +1395,10 @@
     editingId = id;
     const ev = id ? getEvent(id) : null;
 
+    buildCategoryOptions();
     els.eventModalTitle.textContent = ev ? 'Edit event' : 'Event baru';
     els.fJudul.value = ev ? ev.judul : '';
-    setRadio(ev ? ev.kategori : state.lastKategori);
+    setRadio(ev ? ev.kategori : (hasCat(state.lastKategori) ? state.lastKategori : 'meeting'));
     els.fTanggal.value = ev ? ev.tanggal : (date || toISO(state.cursor));
 
     const start = ev ? ev.mulai : (mulai || '');
@@ -1168,6 +1408,15 @@
     els.fAkhir.value = minToTime(Math.min(timeToMin(start || '09:00') + formDuration, 1439));
 
     els.fNominal.value = ev && ev.nominal ? formatThousands(ev.nominal) : '';
+    els.fPPN.value = ev && ev.ppn ? formatThousands(ev.ppn) : '';
+    els.fPPh.value = ev && ev.pph ? formatThousands(ev.pph) : '';
+    els.fCabang.value = ev ? ev.cabang : '';
+    els.fUnit.value = ev ? ev.unit : '';
+    els.fTahap.value = ev ? ev.tahap : '';
+    els.fPeriodeMulai.value = ev ? ev.periodeMulai : '';
+    els.fPeriodeSelesai.value = ev ? ev.periodeSelesai : '';
+    const cabangList = [...new Set(state.events.map((x) => x.cabang).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
+    els.cabangList.innerHTML = cabangList.map((c) => `<option value="${escapeHTML(c)}"></option>`).join('');
     els.fCatatan.value = ev ? ev.catatan : '';
     els.fUlangi.value = 'none';
     els.fJumlah.value = 12;
@@ -1183,8 +1432,15 @@
   }
 
   function readForm() {
-    const judul = els.fJudul.value.trim();
-    if (!judul) return { error: 'Judul wajib diisi.', field: els.fJudul };
+    const kategori = getRadio();
+    const isSewa = kategori === 'sewa';
+    const isPayment = CATEGORIES[kategori].payment;
+    const cabang = isSewa ? els.fCabang.value.trim() : '';
+    const unit = isSewa ? els.fUnit.value.trim() : '';
+    const tahap = isSewa ? els.fTahap.value.trim() : '';
+    const judul = els.fJudul.value.trim() || buildTitle({ kategori, cabang, unit, tahap });
+    if (!judul) return { error: isSewa ? 'Isi judul atau cabang.' : 'Judul wajib diisi.', field: isSewa ? els.fCabang : els.fJudul };
+
     const tanggal = els.fTanggal.value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) return { error: 'Tanggal belum valid.', field: els.fTanggal };
 
@@ -1199,15 +1455,28 @@
       durasi = e - s;
     }
 
-    const digits = els.fNominal.value.replace(/\D/g, '');
+    const periodeMulai = isSewa ? els.fPeriodeMulai.value : '';
+    const periodeSelesai = isSewa ? els.fPeriodeSelesai.value : '';
+    if (Boolean(periodeMulai) !== Boolean(periodeSelesai)) {
+      return { error: 'Isi awal dan akhir masa sewa, atau kosongkan keduanya.', field: periodeMulai ? els.fPeriodeSelesai : els.fPeriodeMulai };
+    }
+    if (periodeMulai && periodeSelesai < periodeMulai) return { error: 'Akhir masa sewa harus setelah awal masa sewa.', field: els.fPeriodeSelesai };
+
     return {
       data: {
-        kategori: getRadio(),
+        kategori,
         judul,
         tanggal,
         mulai,
         durasi,
-        nominal: digits ? Number(digits) : null,
+        nominal: moneyValue(els.fNominal),
+        ppn: isPayment ? moneyValue(els.fPPN) : null,
+        pph: isPayment ? moneyValue(els.fPPh) : null,
+        cabang,
+        unit,
+        tahap,
+        periodeMulai,
+        periodeSelesai,
         catatan: els.fCatatan.value.trim(),
         selesai: els.fStatus.checked,
       },
@@ -1284,7 +1553,7 @@
     els.eventModal.close();
     const ev = getEvent(focusId);
     if (ev && !isInView(parseISO(ev.tanggal))) { state.cursor = parseISO(ev.tanggal); syncMini(); }
-    if (ev && !state.filters[ev.kategori]) state.filters[ev.kategori] = true;
+    if (ev) delete state.filters[ev.kategori];
     state.selectedId = focusId;
     render();
     toast(message);
@@ -1383,7 +1652,11 @@
   function mapCategory(raw) {
     const s = normalizeText(raw);
     if (!s) return null;
-    if (CAT_KEYS.includes(s)) return s;
+    if (hasCat(s)) return s;
+    const exact = findCategoryByLabel(s);
+    if (exact) return exact;
+    const custom = catKeys().find((k) => CATEGORIES[k].custom && s.includes(normalizeText(CATEGORIES[k].label)));
+    if (custom) return custom;
     if (/sewa|rent|lease/.test(s)) return 'sewa';
     if (/rutin|routine|recurring|tagihan|langganan|iuran|bulanan/.test(s)) return 'rutin';
     if (/meeting|rapat|pertemuan|meet/.test(s)) return 'meeting';
@@ -1392,7 +1665,7 @@
     return null;
   }
 
-  /* Menerima: 2026-10-15, 2026/10/15, 15/10/2026, 15-10-2026, 15.10.2026,
+  /* Menerima: 2026-10-15, 2026/10/15, 15/10/2026, 15-10-2026, 15.10.2026, 02/02 2027,
      15 Okt 2026, 15 Oktober 2026, "Senin, 15 Oktober 2026", dan opsional jam "09:00" */
   function parseDateTime(raw) {
     let s = String(raw || '').trim();
@@ -1413,7 +1686,7 @@
     let y; let mo; let d; let mt;
     if ((mt = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/))) {
       y = Number(mt[1]); mo = Number(mt[2]) - 1; d = Number(mt[3]);
-    } else if ((mt = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) {
+    } else if ((mt = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.\s]+(\d{2,4})$/))) {
       d = Number(mt[1]); mo = Number(mt[2]) - 1; y = Number(mt[3]);
       if (y < 100) y += 2000;
     } else if ((mt = s.match(/^(\d{1,2})[\s-]+([a-z]+)\.?[\s-]+(\d{4})$/i))) {
@@ -1427,7 +1700,24 @@
     return { date: toISO(dt), time };
   }
 
-  /* Durasi: kosong, "Sepanjang hari", "09:00-10:30", "09:00 (90 menit)",
+  // Rentang tanggal seperti "01/03/2026 - 28/02/2027", "01/12/2024- 30/11/2025", "01/01/2026 - 02/02 2027"
+  const DATE_IN_TEXT = /\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.\s]\d{4}|\d{1,2}[\s-]+[a-z]{3,9}\.?[\s-]+\d{4}/gi;
+
+  function looksLikePeriod(raw) { return (String(raw || '').match(DATE_IN_TEXT) || []).length >= 2; }
+
+  // null = kosong, false = tidak terbaca, objek = berhasil
+  function parsePeriod(raw) {
+    const s = String(raw || '').trim();
+    if (!s || s === '-' || s === '—') return null;
+    const found = s.match(DATE_IN_TEXT) || [];
+    if (found.length < 2) return false;
+    const a = parseDateTime(found[0]);
+    const b = parseDateTime(found[1]);
+    if (!a || !b) return false;
+    return { mulai: a.date, selesai: b.date };
+  }
+
+  /* Waktu acara: kosong, "Sepanjang hari", "09:00-10:30", "09:00 (90 menit)",
      "90", "90 menit", "1 jam", "1,5 jam", "1 jam 30 menit", "2j", "30m" */
   function parseDuration(raw, timeFromDate) {
     const s = normalizeText(raw).replace(',', '.');
@@ -1474,9 +1764,10 @@
     return null;
   }
 
-  // Mengembalikan angka, null jika kosong, atau NaN jika tidak valid
-  function parseNominal(raw) {
-    let s = String(raw || '').toLowerCase().replace(/rp\.?|idr/g, '').replace(/\s+/g, '');
+  /* Angka rupiah fleksibel. Mengembalikan angka, null jika kosong, atau NaN jika tidak valid.
+     Contoh: 134,000,000 / 134.000.000 / Rp 4.750.000,00 / 44444444.400000006 / 1,5jt */
+  function parseAmount(raw) {
+    let s = String(raw ?? '').toLowerCase().replace(/rp\.?|idr/g, '').replace(/\s+/g, '');
     if (!s || s === '-' || s === '—') return null;
     const unit = s.match(/(jt|juta|rb|ribu|k|miliar|milyar|m)$/);
     if (unit) {
@@ -1486,11 +1777,34 @@
       if (!/^\d+([.,]\d+)?$/.test(s)) return NaN;
       return Math.round(parseFloat(s.replace(',', '.')) * mult);
     }
-    if (!/^[\d.,]+$/.test(s)) return NaN;
-    s = s.replace(/[.,]\d{1,2}$/, '');          // buang desimal ",00" / ".50"
-    const digits = s.replace(/[.,]/g, '');
-    if (!digits) return NaN;
-    return Number(digits);
+    if (!/^\d[\d.,]*$/.test(s)) return NaN;
+    const last = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+    if (last !== -1) {
+      const sep = s[last];
+      const decimals = s.length - last - 1;
+      const sepCount = s.split(sep).length - 1;
+      const hasOther = s.includes(sep === '.' ? ',' : '.');
+      // Pemisah terakhir adalah desimal jika diikuti selain 3 digit (mis. ",00" atau ".4000006")
+      if (decimals !== 3 || (hasOther && sepCount === 1)) {
+        return Math.round(parseFloat(`${s.slice(0, last).replace(/[.,]/g, '') || '0'}.${s.slice(last + 1) || '0'}`));
+      }
+    }
+    return Number(s.replace(/[.,]/g, ''));
+  }
+
+  // Ambil "PPN: 14740000 | PPh: 0" dari teks catatan; sisanya tetap menjadi catatan
+  function extractTaxes(text) {
+    let ppn = null;
+    let pph = null;
+    let rest = String(text || '');
+    rest = rest.replace(/\bppn\b\s*[:=]?\s*(?:rp\.?\s*)?([\d][\d.,]*)/i, (m, v) => { ppn = parseAmount(v); return ' '; });
+    rest = rest.replace(/\bpph\b(?:\s*(?:pasal\s*)?(?:4\s*(?:ayat\s*)?\(?\s*2\s*\)?|23|21|26))?\s*[:=]?\s*(?:rp\.?\s*)?([\d][\d.,]*)/i, (m, v) => { pph = parseAmount(v); return ' '; });
+    rest = rest.replace(/(\s*[|;]\s*)+/g, ' | ').replace(/^[\s|;,/-]+|[\s|;,/-]+$/g, '').trim();
+    return {
+      ppn: Number.isFinite(ppn) ? ppn : null,
+      pph: Number.isFinite(pph) ? pph : null,
+      rest,
+    };
   }
 
   function parseStatus(raw) {
@@ -1498,6 +1812,53 @@
     if (!s) return false;
     if (/^(belum|tidak|no|false|0|pending|open|todo)/.test(s)) return false;
     return /(selesai|lunas|done|sudah|paid|complete|ya|yes|true|1)/.test(s);
+  }
+
+  function prettyHeader(h) {
+    const s = String(h).replace(/^\uFEFF/, '').replace(/_+/g, ' ').trim();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // Tebak kategori bawaan dari nama file & header bila file tidak punya kolom kategori
+  function guessKategori(name, headerNorm) {
+    const s = `${name} ${headerNorm.join(' ')}`.toLowerCase();
+    if (/sewa|rent|lease/.test(s)) return 'sewa';
+    // Kolom khas jadwal sewa: cabang, sub unit, term/tahap, masa sewa
+    const sewaCols = [...HEADER_ALIASES.cabang, ...HEADER_ALIASES.unit, ...HEADER_ALIASES.tahap, ...HEADER_ALIASES.periode];
+    if (headerNorm.some((h) => sewaCols.includes(h))) return 'sewa';
+    if (/rapat|meeting/.test(s)) return 'meeting';
+    if (/task|tugas|laporan|report/.test(s)) return 'task';
+    return 'rutin';
+  }
+
+  // Kenali kolom berdasarkan nama header; kolom tanggal bisa dideteksi dari isinya
+  function detectColumns(headerRow, dataRows) {
+    const header = headerRow.map(normHeader);
+    const used = new Set();
+    const col = {};
+    Object.entries(HEADER_ALIASES).forEach(([key, aliases]) => {
+      for (const alias of aliases) {
+        const i = header.findIndex((h, idx) => h === alias && !used.has(idx));
+        if (i !== -1) { col[key] = i; used.add(i); break; }
+      }
+    });
+    if (col.tanggal === undefined) {
+      let best = -1;
+      let bestScore = 0;
+      header.forEach((h, idx) => {
+        if (used.has(idx)) return;
+        const vals = dataRows.map((r) => String(r[idx] ?? '').trim()).filter(Boolean);
+        if (!vals.length) return;
+        const score = vals.filter((v) => parseDateTime(v)).length / vals.length;
+        if (score > bestScore) { bestScore = score; best = idx; }
+      });
+      if (best !== -1 && bestScore >= 0.6) { col.tanggal = best; used.add(best); }
+    }
+    const extras = [];
+    headerRow.forEach((h, idx) => {
+      if (!used.has(idx) && String(h).trim()) extras.push({ idx, label: prettyHeader(h) });
+    });
+    return { col, extras, header };
   }
 
   function handleCSVFile(file) {
@@ -1512,7 +1873,7 @@
         prepareImport(String(reader.result), file.name);
       } catch (err) {
         console.error(err);
-        toast('File CSV tidak bisa dibaca. Periksa format dan header-nya.');
+        toast('File CSV tidak bisa dibaca. Periksa isinya lalu coba lagi.');
       }
     };
     reader.onerror = () => toast('Gagal membaca file.');
@@ -1522,116 +1883,205 @@
   function prepareImport(text, name) {
     const rows = parseCSV(text);
     if (rows.length < 2) { toast('File CSV kosong atau hanya berisi header.'); return; }
-
-    const header = rows[0].map(normHeader);
-    const col = {};
-    Object.entries(HEADER_ALIASES).forEach(([key, aliases]) => {
-      for (const alias of aliases) {
-        const i = header.indexOf(alias);
-        if (i !== -1) { col[key] = i; break; }
-      }
-    });
-
-    const missing = Object.keys(REQUIRED_HEADERS).filter((k) => col[k] === undefined);
-    if (missing.length) {
-      toast(`Kolom wajib tidak ditemukan: ${missing.map((k) => REQUIRED_HEADERS[k]).join(', ')}.`, {
+    const dataRows = rows.slice(1);
+    const { col, extras, header } = detectColumns(rows[0], dataRows);
+    if (col.tanggal === undefined) {
+      toast('Kolom tanggal tidak ditemukan. Beri judul kolom seperti "Tanggal" atau "Tanggal_Jatuh_Tempo".', {
         timeout: 9000, action: 'Unduh template', onAction: downloadTemplate,
       });
       return;
     }
-
-    const existing = new Set(state.events.map(dupKey));
-    const seen = new Map();
-    const now = new Date().toISOString();
-
-    const results = rows.slice(1).map((r, i) => {
-      const get = (k) => (col[k] === undefined ? '' : String(r[col[k]] ?? '').trim());
-      const res = {
-        rowNo: get('no') || String(i + 1),
-        status: 'new',
-        notes: [],
-        ev: null,
-        raw: { kategori: get('kategori'), judul: get('judul'), tanggal: get('tanggal'), nominal: get('nominal'), durasi: get('durasi') },
-      };
-      const fail = (msg) => { res.status = 'error'; res.notes.push(msg); return res; };
-
-      const kategori = mapCategory(get('kategori'));
-      if (!kategori) return fail(`Kategori "${get('kategori') || '(kosong)'}" tidak dikenali`);
-      const judul = get('judul');
-      if (!judul) return fail('Judul kosong');
-      const dt = parseDateTime(get('tanggal'));
-      if (!dt) return fail(`Tanggal "${get('tanggal') || '(kosong)'}" tidak dikenali`);
-
-      let dur = parseDuration(get('durasi'), dt.time);
-      if (!dur) {
-        dur = dt.time ? { mulai: dt.time, durasi: 60 } : { mulai: '', durasi: 0 };
-        res.notes.push(`Durasi "${get('durasi')}" tidak terbaca, dianggap ${dur.mulai ? '60 menit' : 'sepanjang hari'}`);
-      }
-
-      const nominal = parseNominal(get('nominal'));
-      if (Number.isNaN(nominal)) return fail(`Nominal "${get('nominal')}" tidak valid`);
-
-      const selesai = parseStatus(get('status'));
-      const ev = normalizeEvent({
-        id: uid(), kategori, judul, tanggal: dt.date, mulai: dur.mulai, durasi: dur.durasi,
-        nominal, catatan: get('catatan'), selesai, selesaiPada: selesai ? now : null, sumber: 'csv', dibuat: now,
-      });
-      if (!ev) return fail('Data tidak lengkap');
-
-      const key = dupKey(ev);
-      if (existing.has(key)) {
-        res.status = 'dup';
-        res.notes.push('Sudah ada di kalender');
-      } else if (seen.has(key)) {
-        res.status = 'dup';
-        res.notes.push(`Sama dengan baris No ${seen.get(key)} di file ini`);
-      } else {
-        seen.set(key, res.rowNo);
-      }
-      res.ev = ev;
-      return res;
-    });
-
-    state.pendingImport = { name, results };
+    state.pendingImport = {
+      name,
+      rows: dataRows,
+      col,
+      extras,
+      hasKategoriCol: col.kategori !== undefined,
+      kategori: guessKategori(name, header),
+      includeSimilar: false,
+      pastDone: col.status === undefined,   // file tanpa kolom status: jadwal lampau dianggap sudah dibayar
+      results: [],
+    };
+    buildImportResults();
     renderImportModal();
     els.importModal.showModal();
   }
 
+  function buildImportResults() {
+    const p = state.pendingImport;
+    const { rows, col, extras } = p;
+    const exact = new Set(state.events.map(dupKey));
+    const similar = new Map();
+    state.events.forEach((ev) => { const k = simKey(ev); if (k && !similar.has(k)) similar.set(k, ev); });
+    const seenExact = new Map();
+    const seenSimilar = new Map();
+    const seenDate = new Map();
+    const now = new Date().toISOString();
+    let last = { cabang: '', unit: '' };
+
+    p.results = rows.map((r, i) => {
+      const get = (k) => (col[k] === undefined ? '' : String(r[col[k]] ?? '').trim());
+      const rowNo = get('no') || String(i + 1);
+      const res = {
+        rowNo, status: 'new', notes: [], warn: false, ev: null,
+        raw: { judul: get('judul') || [get('cabang'), get('unit'), get('tahap')].filter(Boolean).join(' '), tanggal: get('tanggal'), nominal: get('nominal') },
+      };
+      const fail = (msg) => { res.status = 'error'; res.notes.push(msg); return res; };
+      const warn = (msg) => { res.warn = true; res.notes.push(msg); };
+
+      // Kategori: dari kolom jika ada, selain itu memakai pilihan di atas tabel
+      let kategori = p.kategori;
+      const katRaw = get('kategori');
+      if (katRaw) {
+        const k = mapCategory(katRaw);
+        if (k) kategori = k;
+        else warn(`Kategori "${katRaw}" tidak dikenali, memakai ${CATEGORIES[p.kategori].short}`);
+      }
+
+      // Sel cabang/sub unit yang kosong mengikuti baris di atasnya (seperti sel gabungan di Excel)
+      let cabang = get('cabang');
+      let unit = get('unit');
+      if (!cabang && col.cabang !== undefined && last.cabang) cabang = last.cabang;
+      if (!unit && cabang && cabang === last.cabang && last.unit) unit = last.unit;
+      last = { cabang, unit };
+      const tahap = get('tahap');
+
+      const dt = parseDateTime(get('tanggal'));
+      if (!dt) return fail(`Tanggal "${get('tanggal') || '(kosong)'}" tidak dikenali`);
+
+      let periodeRaw = get('periode');
+      let waktuRaw = get('waktu');
+      if (!periodeRaw && looksLikePeriod(waktuRaw)) { periodeRaw = waktuRaw; waktuRaw = ''; }
+      let periode = parsePeriod(periodeRaw);
+      if (periode === false) { warn(`Masa sewa "${periodeRaw}" tidak terbaca`); periode = null; }
+      else if (periode && periode.selesai < periode.mulai) warn('Akhir masa sewa lebih awal dari awal masa sewa');
+
+      let dur = parseDuration(waktuRaw, dt.time);
+      if (!dur) {
+        dur = dt.time ? { mulai: dt.time, durasi: 60 } : { mulai: '', durasi: 0 };
+        warn(`Waktu "${waktuRaw}" tidak terbaca, dianggap ${dur.mulai ? '60 menit' : 'sepanjang hari'}`);
+      }
+
+      const nominal = parseAmount(get('nominal'));
+      if (Number.isNaN(nominal)) return fail(`Nominal "${get('nominal')}" tidak valid`);
+
+      const taxes = extractTaxes(get('catatan'));
+      let { ppn, pph } = taxes;
+      if (col.ppn !== undefined) { const v = parseAmount(get('ppn')); if (Number.isFinite(v)) ppn = v; }
+      if (col.pph !== undefined) { const v = parseAmount(get('pph')); if (Number.isFinite(v)) pph = v; }
+
+      const extra = extras.map((x) => ({ label: x.label, value: String(r[x.idx] ?? '').trim() })).filter((x) => x.value);
+      const judul = get('judul') || buildTitle({ kategori, cabang, unit, tahap }) || (extra[0] && extra[0].value) || `${CATEGORIES[kategori].short} ${rowNo}`;
+      const statusRaw = get('status');
+      const selesai = statusRaw ? parseStatus(statusRaw) : (p.pastDone && dt.date < todayISO());
+
+      const ev = normalizeEvent({
+        id: uid(), kategori, judul, tanggal: dt.date, mulai: dur.mulai, durasi: dur.durasi, nominal,
+        catatan: taxes.rest, cabang, unit, tahap, ppn, pph, extra,
+        periodeMulai: periode ? periode.mulai : '', periodeSelesai: periode ? periode.selesai : '',
+        selesai, selesaiPada: selesai ? now : null, sumber: 'csv', dibuat: now,
+      });
+      if (!ev) return fail('Data tidak lengkap');
+      res.ev = ev;
+
+      // Lokasi & tahap sama, tanggal sama, tetapi nominal beda: kemungkinan salah ketik tanggal
+      if (cabang) {
+        const dateKey = [kategori, normalizeText(cabang), normalizeText(unit), normalizeText(tahap), ev.tanggal].join('|');
+        const prev = seenDate.get(dateKey);
+        if (prev && prev.nominal !== ev.nominal) warn(`Jatuh tempo sama dengan baris No ${prev.rowNo} tetapi nominal berbeda. Cek kemungkinan salah ketik tanggal.`);
+        else if (!prev) seenDate.set(dateKey, { rowNo, nominal: ev.nominal });
+      }
+
+      const key = dupKey(ev);
+      const sk = simKey(ev);
+      if (exact.has(key)) {
+        res.status = 'dup';
+        res.notes.unshift('Sudah ada di kalender');
+      } else if (seenExact.has(key)) {
+        res.status = 'dup';
+        res.notes.unshift(`Sama persis dengan baris No ${seenExact.get(key)}`);
+      } else if (sk && similar.has(sk)) {
+        res.status = 'similar';
+        res.notes.unshift(`Tanggal & nominal sama dengan "${similar.get(sk).judul}" yang sudah ada di kalender`);
+        seenExact.set(key, rowNo);
+      } else if (sk && seenSimilar.has(sk)) {
+        const pr = seenSimilar.get(sk);
+        res.status = 'similar';
+        res.notes.unshift(`Tanggal & nominal sama dengan baris No ${pr.rowNo} (${pr.judul})`);
+        seenExact.set(key, rowNo);
+      } else {
+        seenExact.set(key, rowNo);
+        if (sk) seenSimilar.set(sk, { rowNo, judul: ev.judul });
+      }
+      return res;
+    });
+  }
+
   function renderImportModal() {
-    const { name, results } = state.pendingImport;
-    const n = results.filter((r) => r.status === 'new').length;
-    const d = results.filter((r) => r.status === 'dup').length;
-    const x = results.filter((r) => r.status === 'error').length;
-    const badge = { new: 'Baru', dup: 'Duplikat', error: 'Error' };
+    const p = state.pendingImport;
+    const counts = { new: 0, similar: 0, dup: 0, error: 0 };
+    p.results.forEach((r) => { counts[r.status] += 1; });
+    const warns = p.results.filter((r) => r.warn && r.status !== 'error').length;
+    const toImport = counts.new + (p.includeSimilar ? counts.similar : 0);
+    const badge = { new: 'Baru', similar: 'Mirip', dup: 'Duplikat', error: 'Error' };
 
-    els.importFileName.textContent = `${name}: ${results.length} baris data dibaca. Baris duplikat dan bermasalah tidak akan diimpor.`;
-    els.importStats.innerHTML = `<span class="stat stat--new">${n} siap diimpor</span>`
-      + `<span class="stat stat--dup">${d} duplikat dilewati</span>`
-      + `<span class="stat stat--error">${x} perlu diperbaiki</span>`;
+    els.importFileName.textContent = `${p.name}: ${p.results.length} baris data dibaca.`;
+    const known = Object.keys(p.col).filter((k) => k !== 'no').map((k) => COL_LABELS[k]);
+    els.importColumns.textContent = `Kolom yang dikenali: ${known.join(', ')}.`
+      + (p.extras.length ? ` Kolom lain disimpan sebagai info tambahan: ${p.extras.map((x) => x.label).join(', ')}.` : '');
 
-    els.importBody.innerHTML = results.map((r) => {
+    els.importKategori.innerHTML = catKeys().map((k) => `<option value="${k}">${escapeHTML(CATEGORIES[k].label)}</option>`).join('');
+    els.importKategori.value = p.kategori;
+    els.importKategoriHint.textContent = p.hasKategoriCol
+      ? 'Dipakai untuk baris yang kolom kategorinya kosong.'
+      : 'File tidak punya kolom kategori, jadi semua baris memakai kategori ini.';
+    els.importSimilarWrap.hidden = counts.similar === 0;
+    els.importSimilar.checked = p.includeSimilar;
+    els.importSimilarLabel.textContent = `Impor juga ${counts.similar} baris yang mirip`;
+    const pastCount = p.results.filter((r) => r.ev && r.ev.tanggal < todayISO()).length;
+    els.importPastWrap.hidden = pastCount === 0;
+    els.importPast.checked = p.pastDone;
+    els.importPastLabel.textContent = `Tandai ${pastCount} jatuh tempo sebelum hari ini sebagai lunas/selesai`;
+
+    const stats = [`<span class="stat stat--new">${counts.new} baru</span>`];
+    if (counts.similar) stats.push(`<span class="stat stat--similar">${counts.similar} mirip data lain</span>`);
+    if (counts.dup) stats.push(`<span class="stat stat--dup">${counts.dup} duplikat dilewati</span>`);
+    if (counts.error) stats.push(`<span class="stat stat--error">${counts.error} perlu diperbaiki</span>`);
+    if (warns) stats.push(`<span class="stat stat--warn">${warns} perlu dicek</span>`);
+    els.importStats.innerHTML = stats.join('');
+
+    els.importBody.innerHTML = p.results.map((r) => {
       const ev = r.ev;
-      const cat = ev ? `<span class="cat-dot cat-${ev.kategori}"></span>${CATEGORIES[ev.kategori].short}` : escapeHTML(r.raw.kategori || '—');
-      const tanggal = ev ? fmtDateMedium(parseISO(ev.tanggal)) : escapeHTML(r.raw.tanggal || '—');
-      const waktu = ev ? fmtTimeRange(ev) : escapeHTML(r.raw.durasi || '—');
-      const nominal = ev ? (ev.nominal ? fmtIDR(ev.nominal) : '—') : escapeHTML(r.raw.nominal || '—');
+      const cat = ev ? `<span class="cat-dot cat-${ev.kategori}"></span>${escapeHTML(CATEGORIES[ev.kategori].short)}` : '—';
       const judul = escapeHTML(ev ? ev.judul : r.raw.judul) || '—';
+      const tanggal = ev ? fmtDateMedium(parseISO(ev.tanggal)) : escapeHTML(r.raw.tanggal || '—');
+      let periode = '—';
+      if (ev && ev.periodeMulai) periode = `${fmtDateMedium(parseISO(ev.periodeMulai))} – ${fmtDateMedium(parseISO(ev.periodeSelesai))}`;
+      else if (ev && ev.mulai) periode = fmtTimeRange(ev);
+      let nominal = escapeHTML(r.raw.nominal || '—');
+      if (ev) {
+        nominal = ev.nominal ? fmtIDR(ev.nominal) : '—';
+        const tax = [ev.ppn ? `PPN ${formatThousands(ev.ppn)}` : '', ev.pph ? `PPh ${formatThousands(ev.pph)}` : ''].filter(Boolean).join('<br>');
+        if (tax) nominal += `<div class="num-sub">${tax}</div>`;
+      }
+      const notes = escapeHTML(r.notes.join(' ')) || (ev && ev.selesai ? `<span class="muted">${doneWord(ev)}</span>` : '—');
       return `<tr class="is-${r.status}"><td>${escapeHTML(r.rowNo)}</td>`
         + `<td><span class="row-badge row-badge--${r.status}">${badge[r.status]}</span></td>`
-        + `<td>${cat}</td><td>${judul}</td><td>${tanggal}</td><td>${waktu}</td>`
-        + `<td class="num">${nominal}</td><td>${escapeHTML(r.notes.join('; ')) || '—'}</td></tr>`;
+        + `<td class="nowrap">${cat}</td><td>${judul}</td><td class="nowrap">${tanggal}</td><td class="nowrap">${periode}</td>`
+        + `<td class="num">${nominal}</td><td class="${r.warn ? 'note-warn' : ''}">${notes}</td></tr>`;
     }).join('');
 
-    els.btnDoImport.disabled = n === 0;
-    els.btnDoImport.textContent = n ? `Impor ${n} event` : 'Tidak ada data baru';
+    els.btnDoImport.disabled = toImport === 0;
+    els.btnDoImport.textContent = toImport ? `Impor ${toImport} event` : 'Tidak ada data baru';
   }
 
   function commitImport() {
     const p = state.pendingImport;
     if (!p) return;
+    const allowed = p.includeSimilar ? ['new', 'similar'] : ['new'];
     const keys = new Set(state.events.map(dupKey));
     const add = p.results
-      .filter((r) => r.status === 'new')
+      .filter((r) => allowed.includes(r.status))
       .map((r) => r.ev)
       .filter((ev) => {
         const k = dupKey(ev);
@@ -1643,19 +2093,18 @@
     state.events.push(...add);
     saveEvents();
     els.importModal.close();
-    state.pendingImport = null;
 
     if (add.length && !add.some((ev) => isInView(parseISO(ev.tanggal)))) {
-      const first = add.map((ev) => ev.tanggal).sort()[0];
-      state.cursor = parseISO(first);
+      const today = todayISO();
+      const upcoming = add.map((ev) => ev.tanggal).filter((t) => t >= today).sort()[0];
+      state.cursor = parseISO(upcoming || add.map((ev) => ev.tanggal).sort().pop());
       syncMini();
     }
     render();
 
-    const dup = p.results.filter((r) => r.status === 'dup').length;
-    const errs = p.results.filter((r) => r.status === 'error').length;
+    const skipped = p.results.length - add.length;
     const ids = new Set(add.map((ev) => ev.id));
-    toast(`${add.length} event diimpor${dup ? `, ${dup} duplikat dilewati` : ''}${errs ? `, ${errs} baris bermasalah` : ''}.`, {
+    toast(`${add.length} event diimpor${skipped ? `, ${skipped} baris dilewati` : ''}.`, {
       action: add.length ? 'Urungkan' : null,
       timeout: 7000,
       onAction: () => { state.events = state.events.filter((ev) => !ids.has(ev.id)); saveEvents(); render(); },
@@ -1666,7 +2115,8 @@
     const s = String(v ?? '');
     return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
-  function toCSV(rows) { return rows.map((r) => r.map(csvEscape).join(',')).join('\r\n'); }
+  // Pemisah titik koma agar langsung terbaca rapi di Excel berbahasa Indonesia
+  function toCSV(rows) { return rows.map((r) => r.map(csvEscape).join(';')).join('\r\n'); }
 
   function downloadText(filename, text) {
     const blob = new Blob([`\uFEFF${text}`], { type: 'text/csv;charset=utf-8' });
@@ -1680,24 +2130,33 @@
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
-  function durationText(ev) {
-    return ev.mulai ? `${ev.mulai}-${minToTime(timeToMin(ev.mulai) + ev.durasi)}` : 'Sepanjang hari';
+  function dmy(iso) {
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
   }
 
   function exportCSV() {
     if (!state.events.length) { toast('Belum ada data untuk diekspor.'); return; }
     const sorted = [...state.events].sort((a, b) => a.tanggal.localeCompare(b.tanggal) || sortEvents(a, b));
+    const extraLabels = [...new Set(sorted.flatMap((ev) => ev.extra.map((x) => x.label)))];
     const rows = sorted.map((ev, i) => [
       i + 1,
       CATEGORIES[ev.kategori].label,
       ev.judul,
-      ev.tanggal,
+      ev.cabang,
+      ev.unit,
+      ev.tahap,
+      dmy(ev.tanggal),
       ev.nominal ?? '',
-      durationText(ev),
+      ev.ppn ?? '',
+      ev.pph ?? '',
+      ev.periodeMulai ? `${dmy(ev.periodeMulai)} - ${dmy(ev.periodeSelesai)}` : '',
+      ev.mulai ? `${ev.mulai}-${minToTime(timeToMin(ev.mulai) + ev.durasi)}` : '',
       ev.catatan,
       ev.selesai ? doneWord(ev) : 'Belum',
+      ...extraLabels.map((l) => (ev.extra.find((x) => x.label === l) || {}).value || ''),
     ]);
-    downloadText(`kalender-${todayISO()}.csv`, toCSV([[...CSV_HEADER, 'Status'], ...rows]));
+    downloadText(`kalender-${todayISO()}.csv`, toCSV([[...EXPORT_HEADER, ...extraLabels], ...rows]));
     toast(`${rows.length} event diekspor ke CSV.`);
   }
 
@@ -1705,16 +2164,17 @@
     const base = addMonthsClamped(startOfDay(new Date()), 1, 1);
     const y = base.getFullYear();
     const m = base.getMonth();
-    const iso = (day) => toISO(new Date(y, m, day));
-    const dmy = (day) => `${pad2(day)}/${pad2(m + 1)}/${y}`;
+    const day = (n) => `${pad2(n)}/${pad2(m + 1)}/${y}`;
     const rows = [
-      CSV_HEADER,
-      ['1', 'Pembayaran Sewa Kantor', 'Sewa Gedung Kantor Pusat', iso(5), '25000000', 'Sepanjang hari', 'Transfer ke rekening pemilik gedung'],
-      ['2', 'Pembayaran Rutin', 'Tagihan Listrik & Air', dmy(10), 'Rp 4.750.000', '', 'Bayar via internet banking'],
-      ['3', 'Jadwal Meeting', 'Rapat Evaluasi Budget', iso(12), '', '10:00-11:30', 'Ruang rapat lantai 2'],
-      ['4', 'Task & Report', 'Laporan Keuangan Bulanan', `${iso(7)} 16:00`, '', '60 menit', 'Kirim ke direksi'],
+      ['No', 'Kategori', 'Judul', 'Cabang', 'Sub_Unit', 'Term_Tahap', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'Masa_Sewa', 'Waktu', 'Catatan'],
+      ['1', 'Pembayaran Sewa Kantor', '', 'Kantor Pusat', 'Gedung A', 'Tahap 1', day(5), '120000000', `01/01/${y + 1} - 31/12/${y + 1}`, '', 'PPN: 13200000 | PPh: 0'],
+      ['2', 'Pembayaran Sewa Kantor', '', 'Kantor Pusat', '', 'Tahap 2', day(20), '120000000', `01/01/${y + 2} - 31/12/${y + 2}`, '', 'PPN: 13200000 | PPh: 0'],
+      ['3', 'Pembayaran Rutin', 'Tagihan Listrik & Air', '', '', '', day(10), 'Rp 4.750.000', '', '', 'Bayar via internet banking'],
+      ['4', 'Jadwal Meeting', 'Rapat Evaluasi Budget', '', '', '', day(12), '', '', '10:00-11:30', 'Ruang rapat lantai 2'],
+      ['5', 'Task & Report', 'Laporan Keuangan Bulanan', '', '', '', `${day(7)} 16:00`, '', '', '60 menit', 'Kirim ke direksi'],
     ];
     downloadText('template-kalender.csv', toCSV(rows));
+    toast('Template diunduh. Semua kolom boleh dihapus atau ditambah, kecuali kolom tanggal.', { timeout: 7000 });
   }
 
   /* -----------------------------------------------------------
@@ -1875,6 +2335,13 @@
       case 'delete': deleteEvent(id); break;
       case 'enable-notif': enableNotifications(); break;
       case 'create-first': openEventModal(); break;
+      case 'add-category': openCategoryModal(); break;
+      case 'edit-category': openCategoryModal(el.dataset.cat); break;
+      case 'new-category-from-form': {
+        // Simpan isian form, buat kategori, lalu pilih kategori baru itu
+        openCategoryModal(null, (key) => { buildCategoryOptionsKeep(key); });
+        break;
+      }
       default: break;
     }
   }
@@ -1919,6 +2386,8 @@
     els.btnExport.addEventListener('click', exportCSV);
     els.btnSample.addEventListener('click', loadSample);
     els.btnClear.addEventListener('click', clearAll);
+    els.categoryForm.addEventListener('submit', saveCategory);
+    els.cDelete.addEventListener('click', deleteCategory);
 
     // Form event
     els.eventForm.addEventListener('submit', handleSave);
@@ -1934,9 +2403,11 @@
       if (d > 0) formDuration = d;
       updateDurHint();
     });
-    els.fNominal.addEventListener('input', () => {
-      const digits = els.fNominal.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
-      els.fNominal.value = digits ? formatThousands(Number(digits)) : '';
+    els.eventForm.addEventListener('input', (e) => {
+      const t = e.target;
+      if (!t.classList || !t.classList.contains('money-input')) return;
+      const digits = t.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+      t.value = digits ? formatThousands(Number(digits)) : '';
     });
     els.fKategori.addEventListener('change', () => { setRadio(getRadio()); updateStatusLabel(); });
     els.fUlangi.addEventListener('change', updateRepeatRow);
@@ -1944,10 +2415,27 @@
 
     // Impor
     els.btnDoImport.addEventListener('click', commitImport);
+    els.importKategori.addEventListener('change', () => {
+      if (!state.pendingImport) return;
+      state.pendingImport.kategori = els.importKategori.value;
+      buildImportResults();
+      renderImportModal();
+    });
+    els.importPast.addEventListener('change', () => {
+      if (!state.pendingImport) return;
+      state.pendingImport.pastDone = els.importPast.checked;
+      buildImportResults();
+      renderImportModal();
+    });
+    els.importSimilar.addEventListener('change', () => {
+      if (!state.pendingImport) return;
+      state.pendingImport.includeSimilar = els.importSimilar.checked;
+      renderImportModal();
+    });
     els.importModal.addEventListener('close', () => { state.pendingImport = null; });
 
     // Tutup dialog saat klik di luar kartu
-    [els.eventModal, els.importModal, els.confirmModal].forEach((dlg) => {
+    [els.eventModal, els.importModal, els.confirmModal, els.categoryModal].forEach((dlg) => {
       let downOnBackdrop = false;
       dlg.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === dlg; });
       dlg.addEventListener('click', (e) => {
@@ -1980,7 +2468,10 @@
       const t = e.target;
       if (!(t instanceof Element)) return;
       if (t.matches('.chk[data-id]')) { toggleDone(t.dataset.id, t.checked); return; }
-      if (t.matches('[data-filter]')) { state.filters[t.dataset.filter] = t.checked; render(); }
+      if (t.matches('[data-filter]')) {
+        if (t.checked) delete state.filters[t.dataset.filter]; else state.filters[t.dataset.filter] = false;
+        render();
+      }
     });
 
     // Keyboard
@@ -2115,13 +2606,18 @@
       'fAllDay', 'timeRow', 'fMulai', 'fAkhir', 'durHint', 'fNominal', 'fCatatan', 'repeatRow', 'fUlangi',
       'jumlahWrap', 'fJumlah', 'fStatus', 'fStatusLabel', 'formError', 'importModal', 'importFileName',
       'importStats', 'importBody', 'btnDoImport', 'confirmModal', 'confirmTitle', 'confirmMsg', 'confirmActions',
-      'periodPicker', 'dayPopover', 'toasts',
+      'periodPicker', 'dayPopover', 'toasts', 'sewaFields', 'taxRow', 'fCabang', 'fUnit', 'fTahap', 'fPeriodeMulai',
+      'fPeriodeSelesai', 'fPPN', 'fPPh', 'cabangList', 'importColumns', 'importKategori', 'importKategoriHint',
+      'importSimilarWrap', 'importSimilar', 'importSimilarLabel', 'importPastWrap', 'importPast', 'importPastLabel',
+      'categoryModal', 'categoryForm', 'categoryModalTitle', 'cName', 'cColors', 'cPayment', 'cDelete', 'cError',
     ].forEach((id) => { els[id] = document.getElementById(id); });
   }
 
   function init() {
     cacheEls();
     if (isMobile()) state.leftOpen = false;
+    loadCategories();
+    renderCategoryStyles();
     loadPrefs();
 
     const stored = loadEvents();
@@ -2151,7 +2647,7 @@
 
   // API kecil untuk debugging dari console browser
   window.CalendarApp = {
-    parseCSV, parseDateTime, parseDuration, parseNominal, mapCategory,
+    parseCSV, parseDateTime, parseDuration, parseAmount, parsePeriod, extractTaxes, mapCategory,
     importCSVText: prepareImport, exportCSV, downloadTemplate,
     get events() { return state.events.slice(); },
   };

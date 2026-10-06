@@ -94,6 +94,7 @@
         <section aria-labelledby="myCalTitle">
           <h2 class="side-title" id="myCalTitle">My Calendars</h2>
           <ul class="cal-filters" id="calFilters"></ul>
+          <button type="button" class="link-btn link-btn--add" data-action="add-category">+ Tambah kategori</button>
           <label class="cal-filter cal-filter--plain">
             <input type="checkbox" class="chk chk--lg" id="chkShowDone" checked />
             <span class="cal-filter__name">Tampilkan yang sudah selesai</span>
@@ -187,13 +188,59 @@
           <span class="duration-hint" id="durHint"></span>
         </div>
 
+        <!-- Isian khusus Pembayaran Sewa Kantor -->
+        <div class="subfields" id="sewaFields" hidden>
+          <div class="field-row">
+            <label class="field">
+              <span>Cabang</span>
+              <input type="text" id="fCabang" list="cabangList" placeholder="Mis. Pemuda" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Sub unit</span>
+              <input type="text" id="fUnit" placeholder="Mis. Gedung A" autocomplete="off" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Tahap / term pembayaran</span>
+            <input type="text" id="fTahap" placeholder="Mis. Tahap 1, Deposit, Periode 2" autocomplete="off" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Masa sewa mulai</span>
+              <input type="date" id="fPeriodeMulai" />
+            </label>
+            <label class="field">
+              <span>Masa sewa selesai</span>
+              <input type="date" id="fPeriodeSelesai" />
+            </label>
+          </div>
+          <datalist id="cabangList"></datalist>
+        </div>
+
         <label class="field">
           <span>Nominal (IDR)</span>
           <span class="money">
             <span class="money__prefix" aria-hidden="true">Rp</span>
-            <input type="text" id="fNominal" inputmode="numeric" placeholder="0" autocomplete="off" />
+            <input type="text" class="money-input" id="fNominal" inputmode="numeric" placeholder="0" autocomplete="off" />
           </span>
         </label>
+
+        <div class="field-row" id="taxRow">
+          <label class="field">
+            <span>PPN</span>
+            <span class="money">
+              <span class="money__prefix" aria-hidden="true">Rp</span>
+              <input type="text" class="money-input" id="fPPN" inputmode="numeric" placeholder="0" autocomplete="off" />
+            </span>
+          </label>
+          <label class="field">
+            <span>PPh</span>
+            <span class="money">
+              <span class="money__prefix" aria-hidden="true">Rp</span>
+              <input type="text" class="money-input" id="fPPh" inputmode="numeric" placeholder="0" autocomplete="off" />
+            </span>
+          </label>
+        </div>
 
         <label class="field">
           <span>Catatan</span>
@@ -241,7 +288,30 @@
         </button>
       </header>
       <div class="modal__body">
-        <p class="import-meta" id="importFileName"></p>
+        <div class="import-meta">
+          <p id="importFileName"></p>
+          <p class="import-columns" id="importColumns"></p>
+        </div>
+        <div class="import-options">
+          <label class="field field--import">
+            <span>Kategori</span>
+            <select id="importKategori">
+              <option value="sewa">Pembayaran Sewa Kantor</option>
+              <option value="rutin">Pembayaran Rutin</option>
+              <option value="meeting">Jadwal Meeting</option>
+              <option value="task">Task &amp; Report</option>
+            </select>
+          </label>
+          <p class="import-hint" id="importKategoriHint"></p>
+          <label class="check" id="importPastWrap" hidden>
+            <input type="checkbox" class="chk chk--lg" id="importPast" />
+            <span id="importPastLabel">Tandai jatuh tempo yang sudah lewat sebagai lunas</span>
+          </label>
+          <label class="check" id="importSimilarWrap" hidden>
+            <input type="checkbox" class="chk chk--lg" id="importSimilar" />
+            <span id="importSimilarLabel">Impor juga baris yang mirip</span>
+          </label>
+        </div>
         <div class="import-stats" id="importStats"></div>
         <div class="table-wrap">
           <table class="import-table">
@@ -251,8 +321,8 @@
                 <th scope="col">Status</th>
                 <th scope="col">Kategori</th>
                 <th scope="col">Judul</th>
-                <th scope="col">Tanggal</th>
-                <th scope="col">Waktu</th>
+                <th scope="col">Jatuh tempo</th>
+                <th scope="col">Masa sewa / waktu</th>
                 <th scope="col" class="num">Nominal</th>
                 <th scope="col">Keterangan</th>
               </tr>
@@ -266,6 +336,39 @@
         <button type="button" class="btn btn--primary" id="btnDoImport">Impor</button>
       </footer>
     </div>
+  </dialog>
+
+  <!-- ===================== MODAL: KATEGORI TAMBAHAN ===================== -->
+  <dialog class="modal modal--small" id="categoryModal" aria-labelledby="categoryModalTitle">
+    <form class="modal__card" id="categoryForm" novalidate>
+      <header class="modal__head">
+        <h2 id="categoryModalTitle">Kategori baru</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Tutup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <label class="field">
+          <span>Nama kategori</span>
+          <input type="text" id="cName" maxlength="40" placeholder="Mis. Kunjungan Cabang, Training, Audit" autocomplete="off" />
+        </label>
+        <fieldset>
+          <legend>Warna</legend>
+          <div class="swatches" id="cColors"></div>
+        </fieldset>
+        <label class="check">
+          <input type="checkbox" class="chk chk--lg" id="cPayment" />
+          <span>Kategori pembayaran (ada nominal, PPN/PPh, dan status Lunas)</span>
+        </label>
+        <p class="form-error" id="cError" role="alert"></p>
+      </div>
+      <footer class="modal__foot modal__foot--split">
+        <button type="button" class="btn btn--danger-text" id="cDelete" hidden>Hapus kategori</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn--text" data-close>Batal</button>
+        <button type="submit" class="btn btn--primary">Simpan</button>
+      </footer>
+    </form>
   </dialog>
 
   <!-- ===================== MODAL: KONFIRMASI ===================== -->

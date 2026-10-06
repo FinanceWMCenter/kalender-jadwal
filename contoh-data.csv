@@ -1,11 +1,11 @@
-No,Kategori,Judul,Tanggal_Jatuh_Tempo,Nominal_IDR,Durasi,Catatan
-1,Pembayaran Sewa Kantor,Sewa Gedung Kantor Pusat,2026-11-05,25000000,Sepanjang hari,Transfer ke rekening pemilik gedung
-2,Pembayaran Sewa Kantor,Sewa Ruko Cabang Selatan,20/11/2026,"Rp 18.500.000",,Konfirmasi bukti transfer ke pemilik ruko
-3,Pembayaran Rutin,Tagihan Listrik & Air,10/11/2026,4750000,,Bayar via internet banking
-4,Pembayaran Rutin,Internet & Telepon Kantor,15 Nov 2026,1.250.000,,
-5,Pembayaran Rutin,Iuran BPJS Kesehatan,2026-11-10,"8.400.000",,"Paling lambat tanggal 10, jangan sampai kena denda"
-6,Jadwal Meeting,Rapat Evaluasi Budget Q4,2026-10-14,,10:00-11:30,Ruang rapat lantai 2
-7,Jadwal Meeting,Meeting Vendor Pengadaan,2026-10-14 14:00,,60 menit,Bahas penawaran alat
-8,Task & Report,Laporan Keuangan Bulanan,2026-11-07,,,Kirim ke direksi
-9,Task & Report,Rekonsiliasi Bank Oktober,2026-11-03 09:00,,2 jam,
-10,Pembayaran Rutin,Tagihan Listrik & Air,10/11/2026,4750000,,Baris ini sama dengan No 3 sehingga dilewati otomatis
+No;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;Durasi_Sewa;Catatan
+1;Kantor Pusat;Gedung A;Tahap 1;15/01/2027;120,000,000;01/03/2027 - 29/02/2028;PPN: 13200000 | PPh: 0
+2;Kantor Pusat;;Tahap 2;01/12/2027;132,000,000;01/03/2028 - 28/02/2029;PPN: 14520000 | PPh: 0
+3;Kantor Pusat;Gedung B;Tahap 1;15/01/2027;85,000,000;01/03/2027 - 29/02/2028;PPN: 9350000 | PPh: 0
+4;Kantor Pusat;;Tahap 2;01/12/2027;93,500,000;01/03/2028 - 28/02/2029;PPN: 10285000 | PPh: 0
+5;Cabang Selatan;;Deposit;02/11/2026;25,000,000;;PPN: 0 | PPh: 0
+6;Cabang Selatan;;Periode 1;15/11/2026;180,000,000;01/01/2027 - 31/12/2027;PPN: 0 | PPh: 18000000
+7;Cabang Selatan;;Periode 2;15/11/2027;180,000,000;01/01/2028 - 31/12/2028;PPN: 0 | PPh: 18000000
+8;Cabang Timur;Lantai 1 Unit C;Tahap 1;20/12/2026;96,000,000;01/02/2027 - 31/01/2029;PPN: 0 | PPh: 9600000
+9;Cabang Timur;;Tahap 2;20/12/2028;104,000,000;01/02/2029 - 31/01/2031;PPN: 0 | PPh: 10400000
+10;Cabang Selatan;WMC;;15/11/2026;180,000,000;;Baris ini mirip dengan No 6 sehingga tidak ikut diimpor kecuali dicentang
