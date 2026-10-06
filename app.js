@@ -405,7 +405,7 @@
       extra,
       selesai: Boolean(raw.selesai),
       selesaiPada: raw.selesai ? (raw.selesaiPada || new Date().toISOString()) : null,
-      sumber: raw.sumber === 'csv' ? 'csv' : 'manual',
+      sumber: ['csv', 'contoh'].includes(raw.sumber) ? raw.sumber : 'manual',
       seriesId: raw.seriesId || null,
       dibuat: raw.dibuat || new Date().toISOString(),
     };
@@ -546,8 +546,46 @@
     return list.map((item) => {
       // Yang sudah lewat dianggap selesai, kecuali satu contoh keterlambatan
       const selesai = item.tanggal < tISO && item.judul !== 'Rekonsiliasi Bank';
-      return normalizeEvent({ ...item, id: uid(), selesai, selesaiPada: selesai ? now : null, sumber: 'manual', dibuat: now });
+      return normalizeEvent({ ...item, id: uid(), selesai, selesaiPada: selesai ? now : null, sumber: 'contoh', dibuat: now });
     }).filter(Boolean);
+  }
+
+  // Judul data contoh (versi lama & baru) untuk mengenali data contoh yang tersimpan sebelum ada penanda "contoh"
+  const SAMPLE_TITLES = new Set([
+    'Sewa Gedung Kantor Pusat', 'Sewa Ruko Cabang Selatan', 'Sewa Gudang Arsip', 'Tagihan Listrik & Air',
+    'Internet & Telepon Kantor', 'Iuran BPJS Ketenagakerjaan', 'Langganan Software Akuntansi', 'Weekly Finance Sync',
+    'Rapat Evaluasi Budget', 'Meeting Vendor Pengadaan', 'Rekonsiliasi Bank', 'Laporan Keuangan Bulanan',
+    'Setor & Lapor PPh 21', 'Review Cash Flow Mingguan', 'Sewa Kantor Pusat Gedung A – Tahun 2',
+    'Sewa Cabang Selatan – Periode 3', 'Sewa Cabang Selatan – Periode 2',
+  ]);
+
+  function findSampleEvents() {
+    const tagged = state.events.filter((ev) => ev.sumber === 'contoh');
+    // Data contoh versi lama: judul contoh yang dibuat bersamaan dalam satu waktu (minimal 8 event)
+    const legacy = state.events.filter((ev) => ev.sumber === 'manual' && SAMPLE_TITLES.has(ev.judul));
+    const batch = {};
+    legacy.forEach((ev) => { batch[ev.dibuat] = (batch[ev.dibuat] || 0) + 1; });
+    return [...tagged, ...legacy.filter((ev) => batch[ev.dibuat] >= 8)];
+  }
+
+  async function clearSamples() {
+    const samples = findSampleEvents();
+    if (!samples.length) { toast('Tidak ada data contoh di kalender.'); return; }
+    const ok = await askConfirm({
+      title: 'Hapus data contoh?',
+      message: `${samples.length} event contoh akan dihapus. Event yang Anda buat sendiri atau impor dari CSV tidak tersentuh.`,
+      buttons: [{ label: 'Batal', value: null }, { label: 'Hapus data contoh', value: 'yes', variant: 'danger' }],
+    });
+    if (ok !== 'yes') return;
+    const ids = new Set(samples.map((ev) => ev.id));
+    state.events = state.events.filter((ev) => !ids.has(ev.id));
+    if (ids.has(state.selectedId)) state.selectedId = null;
+    saveEvents();
+    render();
+    toast(`${samples.length} event contoh dihapus.`, {
+      action: 'Urungkan',
+      onAction: () => { state.events.push(...samples); saveEvents(); render(); },
+    });
   }
 
   /* -----------------------------------------------------------
@@ -1015,7 +1053,7 @@
       + `<div class="detail__band">${escapeHTML(cat.label)}</div>`
       + `<h3 class="detail__title">${escapeHTML(ev.judul)}</h3>`
       + `<dl class="detail__list">${rows.join('')}</dl>`
-      + `<p class="detail__source">${ev.sumber === 'csv' ? 'Diimpor dari CSV' : 'Dibuat manual'}</p>`
+      + `<p class="detail__source">${{ csv: 'Diimpor dari CSV', contoh: 'Data contoh' }[ev.sumber] || 'Dibuat manual'}</p>`
       + '<div class="detail__actions">'
       + `<button type="button" class="btn ${ev.selesai ? 'btn--outline' : 'btn--primary'} btn--block" data-action="toggle-status" data-id="${id}">${ev.selesai ? `Batalkan status ${word.toLowerCase()}` : `Tandai ${word.toLowerCase()}`}</button>`
       + '<div class="detail__row-actions">'
@@ -1900,6 +1938,9 @@
       kategori: guessKategori(name, header),
       includeSimilar: false,
       pastDone: col.status === undefined,   // file tanpa kolom status: jadwal lampau dianggap sudah dibayar
+      mode: 'add',                          // 'add' = tambahkan, 'replace' = ganti data impor CSV sebelumnya
+      removeSamples: findSampleEvents().length > 0,
+      replaceIds: new Set(),
       results: [],
     };
     buildImportResults();
@@ -1907,12 +1948,43 @@
     els.importModal.showModal();
   }
 
+  // Kategori yang dipakai file ini (pilihan di pratinjau + isi kolom kategori, jika ada)
+  function importCategories(p) {
+    const cats = new Set([p.kategori]);
+    if (p.col.kategori !== undefined) {
+      p.rows.forEach((r) => { const k = mapCategory(String(r[p.col.kategori] ?? '')); if (k) cats.add(k); });
+    }
+    return cats;
+  }
+
   function buildImportResults() {
     const p = state.pendingImport;
     const { rows, col, extras } = p;
-    const exact = new Set(state.events.map(dupKey));
+
+    // Mode ganti: data CSV lama di kategori yang sama akan dilepas; data contoh juga bila dicentang
+    const cats = importCategories(p);
+    p.replaceable = state.events.filter((ev) => ev.sumber === 'csv' && cats.has(ev.kategori));
+    p.samples = findSampleEvents();
+    p.replaceIds = new Set([
+      ...(p.mode === 'replace' ? p.replaceable.map((ev) => ev.id) : []),
+      ...(p.removeSamples ? p.samples.map((ev) => ev.id) : []),
+    ]);
+    const base = state.events.filter((ev) => !p.replaceIds.has(ev.id));
+
+    // Status lunas dari data lama dipertahankan untuk jadwal yang sama
+    const oldStatus = new Map();
+    if (p.mode === 'replace') {
+      p.replaceable.forEach((ev) => {
+        const st = { selesai: ev.selesai, selesaiPada: ev.selesaiPada };
+        oldStatus.set(dupKey(ev), st);
+        const sk = simKey(ev);
+        if (sk && !oldStatus.has(sk)) oldStatus.set(sk, st);
+      });
+    }
+
+    const exact = new Set(base.map(dupKey));
     const similar = new Map();
-    state.events.forEach((ev) => { const k = simKey(ev); if (k && !similar.has(k)) similar.set(k, ev); });
+    base.forEach((ev) => { const k = simKey(ev); if (k && !similar.has(k)) similar.set(k, ev); });
     const seenExact = new Map();
     const seenSimilar = new Map();
     const seenDate = new Map();
@@ -1982,6 +2054,10 @@
         selesai, selesaiPada: selesai ? now : null, sumber: 'csv', dibuat: now,
       });
       if (!ev) return fail('Data tidak lengkap');
+      if (!statusRaw && oldStatus.size) {
+        const prevSt = oldStatus.get(dupKey(ev)) || oldStatus.get(simKey(ev));
+        if (prevSt) { ev.selesai = prevSt.selesai; ev.selesaiPada = prevSt.selesaiPada; }
+      }
       res.ev = ev;
 
       // Lokasi & tahap sama, tanggal sama, tetapi nominal beda: kemungkinan salah ketik tanggal
@@ -2040,6 +2116,15 @@
     els.importSimilarLabel.textContent = `Impor juga ${counts.similar} baris yang mirip`;
     const pastCount = p.results.filter((r) => r.ev && r.ev.tanggal < todayISO()).length;
     els.importPastWrap.hidden = pastCount === 0;
+
+    els.importModeWrap.hidden = p.replaceable.length === 0;
+    els.importModeWrap.querySelectorAll('input[name="importMode"]').forEach((r) => { r.checked = r.value === p.mode; });
+    els.importModeHint.textContent = p.mode === 'replace'
+      ? `${p.replaceable.length} event hasil impor CSV sebelumnya akan diganti dengan isi file ini. Event yang dibuat manual tidak tersentuh, dan status lunas dipertahankan untuk jadwal yang sama.`
+      : `Sudah ada ${p.replaceable.length} event dari impor CSV sebelumnya. Pilih "Ganti" jika file ini adalah versi terbaru yang sudah diperbaiki.`;
+    els.importSamplesWrap.hidden = p.samples.length === 0;
+    els.importSamples.checked = p.removeSamples;
+    els.importSamplesLabel.textContent = `Hapus ${p.samples.length} event data contoh bawaan`;
     els.importPast.checked = p.pastDone;
     els.importPastLabel.textContent = `Tandai ${pastCount} jatuh tempo sebelum hari ini sebagai lunas/selesai`;
 
@@ -2071,14 +2156,19 @@
         + `<td class="num">${nominal}</td><td class="${r.warn ? 'note-warn' : ''}">${notes}</td></tr>`;
     }).join('');
 
-    els.btnDoImport.disabled = toImport === 0;
-    els.btnDoImport.textContent = toImport ? `Impor ${toImport} event` : 'Tidak ada data baru';
+    const replacing = p.mode === 'replace' && p.replaceable.length;
+    els.btnDoImport.disabled = toImport === 0 && !p.replaceIds.size;
+    if (replacing) els.btnDoImport.textContent = `Ganti dengan ${toImport} event`;
+    else els.btnDoImport.textContent = toImport ? `Impor ${toImport} event` : (p.replaceIds.size ? 'Hapus data contoh' : 'Tidak ada data baru');
   }
 
   function commitImport() {
     const p = state.pendingImport;
     if (!p) return;
     const allowed = p.includeSimilar ? ['new', 'similar'] : ['new'];
+    const removed = state.events.filter((ev) => p.replaceIds.has(ev.id));
+    state.events = state.events.filter((ev) => !p.replaceIds.has(ev.id));
+    if (p.replaceIds.has(state.selectedId)) state.selectedId = null;
     const keys = new Set(state.events.map(dupKey));
     const add = p.results
       .filter((r) => allowed.includes(r.status))
@@ -2104,10 +2194,20 @@
 
     const skipped = p.results.length - add.length;
     const ids = new Set(add.map((ev) => ev.id));
-    toast(`${add.length} event diimpor${skipped ? `, ${skipped} baris dilewati` : ''}.`, {
-      action: add.length ? 'Urungkan' : null,
-      timeout: 7000,
-      onAction: () => { state.events = state.events.filter((ev) => !ids.has(ev.id)); saveEvents(); render(); },
+    const replacedCount = removed.filter((ev) => ev.sumber === 'csv').length;
+    const sampleCount = removed.length - replacedCount;
+    const parts = [replacedCount ? `${replacedCount} event lama diganti dengan ${add.length} event baru` : `${add.length} event diimpor`];
+    if (skipped) parts.push(`${skipped} baris dilewati`);
+    if (sampleCount) parts.push(`${sampleCount} data contoh dihapus`);
+    toast(`${parts.join(', ')}.`, {
+      action: add.length || removed.length ? 'Urungkan' : null,
+      timeout: 8000,
+      onAction: () => {
+        state.events = state.events.filter((ev) => !ids.has(ev.id));
+        state.events.push(...removed);
+        saveEvents();
+        render();
+      },
     });
   }
 
@@ -2385,6 +2485,7 @@
     els.btnTemplate.addEventListener('click', downloadTemplate);
     els.btnExport.addEventListener('click', exportCSV);
     els.btnSample.addEventListener('click', loadSample);
+    els.btnClearSample.addEventListener('click', clearSamples);
     els.btnClear.addEventListener('click', clearAll);
     els.categoryForm.addEventListener('submit', saveCategory);
     els.cDelete.addEventListener('click', deleteCategory);
@@ -2418,6 +2519,18 @@
     els.importKategori.addEventListener('change', () => {
       if (!state.pendingImport) return;
       state.pendingImport.kategori = els.importKategori.value;
+      buildImportResults();
+      renderImportModal();
+    });
+    els.importModeWrap.addEventListener('change', (e) => {
+      if (!state.pendingImport || e.target.name !== 'importMode') return;
+      state.pendingImport.mode = e.target.value;
+      buildImportResults();
+      renderImportModal();
+    });
+    els.importSamples.addEventListener('change', () => {
+      if (!state.pendingImport) return;
+      state.pendingImport.removeSamples = els.importSamples.checked;
       buildImportResults();
       renderImportModal();
     });
@@ -2609,6 +2722,7 @@
       'periodPicker', 'dayPopover', 'toasts', 'sewaFields', 'taxRow', 'fCabang', 'fUnit', 'fTahap', 'fPeriodeMulai',
       'fPeriodeSelesai', 'fPPN', 'fPPh', 'cabangList', 'importColumns', 'importKategori', 'importKategoriHint',
       'importSimilarWrap', 'importSimilar', 'importSimilarLabel', 'importPastWrap', 'importPast', 'importPastLabel',
+      'importModeWrap', 'importModeHint', 'importSamplesWrap', 'importSamples', 'importSamplesLabel', 'btnClearSample',
       'categoryModal', 'categoryForm', 'categoryModalTitle', 'cName', 'cColors', 'cPayment', 'cDelete', 'cError',
     ].forEach((id) => { els[id] = document.getElementById(id); });
   }

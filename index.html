@@ -109,6 +109,7 @@
             <button type="button" class="link-btn" id="btnTemplate">Unduh template CSV</button>
             <button type="button" class="link-btn" id="btnExport">Ekspor semua ke CSV</button>
             <button type="button" class="link-btn" id="btnSample">Muat data contoh</button>
+            <button type="button" class="link-btn" id="btnClearSample">Hapus data contoh</button>
             <button type="button" class="link-btn link-btn--danger" id="btnClear">Hapus semua data</button>
           </div>
         </section>
@@ -303,6 +304,18 @@
             </select>
           </label>
           <p class="import-hint" id="importKategoriHint"></p>
+          <div class="import-mode" id="importModeWrap" hidden>
+            <span class="import-mode__title">Data dari impor sebelumnya</span>
+            <div class="import-mode__options">
+              <label class="radio-pill"><input type="radio" name="importMode" value="add" checked /><span>Tambahkan</span></label>
+              <label class="radio-pill"><input type="radio" name="importMode" value="replace" /><span>Ganti dengan file ini</span></label>
+            </div>
+            <p class="import-hint" id="importModeHint"></p>
+          </div>
+          <label class="check" id="importSamplesWrap" hidden>
+            <input type="checkbox" class="chk chk--lg" id="importSamples" />
+            <span id="importSamplesLabel">Hapus data contoh bawaan</span>
+          </label>
           <label class="check" id="importPastWrap" hidden>
             <input type="checkbox" class="chk chk--lg" id="importPast" />
             <span id="importPastLabel">Tandai jatuh tempo yang sudah lewat sebagai lunas</span>

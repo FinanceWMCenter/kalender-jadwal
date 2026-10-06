@@ -89,6 +89,19 @@ Kolom lain yang tidak dikenali tetap disimpan dan tampil sebagai info tambahan d
 - **Perlu dicek**: tetap diimpor, tetapi ada kejanggalan, misalnya dua jatuh tempo pada tanggal yang sama untuk lokasi dan tahap yang sama dengan nominal berbeda.
 - Jika file tidak punya kolom status, jatuh tempo yang sudah lewat otomatis ditandai lunas (bisa dimatikan di pratinjau) agar tidak memenuhi daftar "Terlambat".
 
+### Mengganti data dengan file yang diperbarui
+
+Saat file yang sama diunggah ulang (misalnya setelah tanggal yang salah diperbaiki), pratinjau menampilkan pilihan **Data dari impor sebelumnya**:
+
+- **Tambahkan**: hanya baris yang belum ada yang masuk. Data lama tetap ada.
+- **Ganti dengan file ini**: semua event hasil impor CSV sebelumnya di kategori yang sama dihapus, lalu diganti isi file baru. Event yang dibuat manual tidak tersentuh, dan status lunas yang sudah Anda centang tetap dipertahankan untuk jadwal yang sama.
+
+Setiap impor bisa dibatalkan lewat tombol **Urungkan** pada notifikasi di kiri bawah.
+
+### Data contoh
+
+Data contoh hanya dimuat sekali, saat aplikasi pertama kali dibuka di sebuah browser, lalu tersimpan di browser itu. Hapus kapan saja lewat **Kelola data → Hapus data contoh**, atau centang **Hapus data contoh bawaan** di layar pratinjau impor (tercentang otomatis jika data contoh masih ada).
+
 ### Ekspor
 
 **Ekspor semua ke CSV** menghasilkan file berpemisah titik koma dengan kolom `No;Kategori;Judul;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;PPN;PPh;Masa_Sewa;Waktu;Catatan;Status`, yang bisa langsung diimpor kembali.
