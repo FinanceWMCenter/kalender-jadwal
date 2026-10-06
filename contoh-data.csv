@@ -1,0 +1,11 @@
+No,Kategori,Judul,Tanggal_Jatuh_Tempo,Nominal_IDR,Durasi,Catatan
+1,Pembayaran Sewa Kantor,Sewa Gedung Kantor Pusat,2026-11-05,25000000,Sepanjang hari,Transfer ke rekening pemilik gedung
+2,Pembayaran Sewa Kantor,Sewa Ruko Cabang Selatan,20/11/2026,"Rp 18.500.000",,Konfirmasi bukti transfer ke pemilik ruko
+3,Pembayaran Rutin,Tagihan Listrik & Air,10/11/2026,4750000,,Bayar via internet banking
+4,Pembayaran Rutin,Internet & Telepon Kantor,15 Nov 2026,1.250.000,,
+5,Pembayaran Rutin,Iuran BPJS Kesehatan,2026-11-10,"8.400.000",,"Paling lambat tanggal 10, jangan sampai kena denda"
+6,Jadwal Meeting,Rapat Evaluasi Budget Q4,2026-10-14,,10:00-11:30,Ruang rapat lantai 2
+7,Jadwal Meeting,Meeting Vendor Pengadaan,2026-10-14 14:00,,60 menit,Bahas penawaran alat
+8,Task & Report,Laporan Keuangan Bulanan,2026-11-07,,,Kirim ke direksi
+9,Task & Report,Rekonsiliasi Bank Oktober,2026-11-03 09:00,,2 jam,
+10,Pembayaran Rutin,Tagihan Listrik & Air,10/11/2026,4750000,,Baris ini sama dengan No 3 sehingga dilewati otomatis
