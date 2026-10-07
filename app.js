@@ -2097,11 +2097,12 @@
       }
       res.ev = ev;
 
-      // Lokasi & tahap sama, tanggal sama, tetapi nominal beda: kemungkinan salah ketik tanggal
+      // Lokasi, tahap, tanggal, dan masa sewa sama tetapi nominal beda: kemungkinan salah ketik.
+      // Dua tagihan di tanggal yang sama untuk masa sewa berbeda (bayar di muka) dianggap wajar.
       if (cabang) {
-        const dateKey = [kategori, normalizeText(cabang), normalizeText(unit), normalizeText(tahap), ev.tanggal].join('|');
+        const dateKey = [kategori, normalizeText(cabang), normalizeText(unit), normalizeText(tahap), ev.tanggal, ev.periodeMulai, ev.periodeSelesai].join('|');
         const prev = seenDate.get(dateKey);
-        if (prev && prev.nominal !== ev.nominal) warn(`Jatuh tempo sama dengan baris No ${prev.rowNo} tetapi nominal berbeda. Cek kemungkinan salah ketik tanggal.`);
+        if (prev && prev.nominal !== ev.nominal) warn(`Jatuh tempo dan masa sewa sama dengan baris No ${prev.rowNo} tetapi nominal berbeda. Cek kemungkinan data ganda atau salah ketik.`);
         else if (!prev) seenDate.set(dateKey, { rowNo, nominal: ev.nominal });
       }
 
