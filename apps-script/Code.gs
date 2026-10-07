@@ -31,10 +31,10 @@ const TEMPLATES = {
   agenda: ['Nama_Kegiatan', 'Tanggal', 'Jam_Mulai', 'Jam_Selesai', 'Catatan', 'Selesai'],
 };
 const BUILTIN = {
-  'pembayaran sewa kantor': { jenis: 'pembayaran', warna: 'coral', template: 'sewa' },
-  'pembayaran rutin': { jenis: 'pembayaran', warna: 'gold', template: 'pembayaran' },
-  'jadwal meeting': { jenis: 'agenda', warna: 'blue', template: 'agenda' },
-  'task & report': { jenis: 'agenda', warna: 'purple', template: 'agenda' },
+  'pembayaran sewa kantor': { name: 'Pembayaran Sewa Kantor', jenis: 'pembayaran', warna: 'coral', template: 'sewa' },
+  'pembayaran rutin': { name: 'Pembayaran Rutin', jenis: 'pembayaran', warna: 'gold', template: 'pembayaran' },
+  'jadwal meeting': { name: 'Jadwal Meeting', jenis: 'agenda', warna: 'blue', template: 'agenda' },
+  'task & report': { name: 'Task & Report', jenis: 'agenda', warna: 'purple', template: 'agenda' },
 };
 const PALETTE = ['teal', 'pink', 'orange', 'indigo', 'cyan', 'lime', 'sand', 'slate'];
 const ALL_COLORS = PALETTE.concat(['coral', 'gold', 'blue', 'purple']);
@@ -50,6 +50,14 @@ const SYS_TABS = {
 /* =============================================================
    ENDPOINT
    ============================================================= */
+/* Jalankan sekali dari editor Apps Script (pilih siapkanSheet > Run) untuk menyiapkan
+   tab-tab di spreadsheet kosong sekaligus memberi izin akses. Aman dijalankan berulang. */
+function siapkanSheet() {
+  const ctx = context();
+  withLock(function () { ensureStructure(ctx); });
+  return 'Spreadsheet siap: ' + ctx.ss.getSheets().map(function (sh) { return sh.getName(); }).join(', ');
+}
+
 function doGet() {
   return json({ ok: true, app: 'calendar', message: 'Apps Script kalender aktif. Gunakan URL ini di config.js.' });
 }
@@ -275,6 +283,7 @@ function readAll(ctx) {
 function ensureStructure(ctx) {
   const ss = ctx.ss;
   Object.keys(SYS_TABS).forEach(function (name) { ensureSheet(ss, name, SYS_TABS[name]); });
+  firstSetup(ss);
   const katSh = ss.getSheetByName('_Kategori');
   const kat = readSheet(katSh, ctx.tz);
   const ni = findCol(kat.headers, ['nama_tab', 'nama', 'tab']);
@@ -309,6 +318,22 @@ function ensureStructure(ctx) {
     }
   });
   if (newRows.length) appendRows(katSh, newRows, ctx.tz);
+}
+
+/* Penyiapan pertama pada spreadsheet baru: buat 4 tab kategori bawaan dan
+   hapus lembar kosong bawaan ("Sheet1" / "Lembar1"). Hanya berjalan sekali. */
+function firstSetup(ss) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('setup_done') === '1') return;
+  Object.keys(BUILTIN).forEach(function (key) {
+    const exists = categorySheets(ss).some(function (sh) { return normName(sh.getName()) === key; });
+    if (!exists) createCategorySheet(ss, BUILTIN[key].name, BUILTIN[key].template);
+  });
+  ss.getSheets().forEach(function (sh) {
+    const blank = sh.getLastRow() === 0 && sh.getLastColumn() === 0;
+    if (blank && /^(sheet|lembar)\s*\d*$/i.test(sh.getName()) && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  });
+  props.setProperty('setup_done', '1');
 }
 
 /* ID untuk baris yang ditambah langsung di Sheet (dan pengganti ID ganda karena salin-tempel) */

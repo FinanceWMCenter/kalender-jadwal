@@ -126,7 +126,7 @@ Lakukan sekali saja dengan akun Google yang akan menjadi **Admin** (pemilik spre
 
 ### Langkah 1: Siapkan Google Sheet
 
-1. Unggah `template-kalender-kosong.xlsx` ke Google Drive, klik kanan, lalu pilih **Buka dengan → Google Spreadsheet** dan **File → Simpan sebagai Google Spreadsheet**. Spreadsheet kosong biasa juga bisa; tab yang dibutuhkan dibuat otomatis.
+1. Buat Google Spreadsheet kosong (atau unggah `template-kalender-kosong.xlsx` jika ingin tab panduan ikut tersedia). Tab kategori dan tab sistem dibuat otomatis oleh Apps Script pada Langkah 3.
 2. Buka **File → Setelan**, lalu pastikan **Zona waktu** = *(GMT+07:00) Jakarta*.
 
 ### Langkah 2: Buat OAuth Client ID (untuk tombol "Masuk dengan Google")
@@ -134,9 +134,11 @@ Lakukan sekali saja dengan akun Google yang akan menjadi **Admin** (pemilik spre
 1. Buka https://console.cloud.google.com, lalu buat project baru, misalnya `Kalender WM`.
 2. Buka **Google Auth Platform** (dulu bernama *OAuth consent screen*) dan klik **Get started**:
    * App name: `Calendar`, User support email: email Anda.
-   * Audience: **External**.
+   * Audience:
+     * **Internal** jika memakai akun Google Workspace perusahaan dan semua pengguna memakai email domain kantor. Ini paling mudah: tidak perlu dipublikasikan, dan akun di luar domain otomatis tidak bisa login.
+     * **External** jika ada pengguna dengan email di luar domain kantor (misalnya Gmail).
    * Contact information: email Anda, lalu **Create**.
-3. Buka menu **Audience**, lalu klik **Publish app** sehingga statusnya *In production*. Untuk login dasar (nama dan email), langkah ini tidak memerlukan verifikasi Google. Tanpa langkah ini, hanya email yang didaftarkan sebagai *test user* yang bisa login.
+3. Khusus Audience **External**: buka menu **Audience**, lalu klik **Publish app** sehingga statusnya *In production*. Untuk login dasar (nama dan email), langkah ini tidak memerlukan verifikasi Google. Tanpa langkah ini, hanya email yang didaftarkan sebagai *test user* yang bisa login.
 4. Buka menu **Clients** (atau **APIs & Services → Credentials**), lalu klik **Create client**:
    * Application type: **Web application**.
    * **Authorized JavaScript origins**, tambahkan:
@@ -150,13 +152,14 @@ Lakukan sekali saja dengan akun Google yang akan menjadi **Admin** (pemilik spre
 1. Di Google Sheet, buka **Ekstensi → Apps Script**.
 2. Hapus semua isi `Code.gs`, lalu tempel seluruh isi file `apps-script/Code.gs` dari proyek ini.
 3. Di bagian atas, ganti `TEMPEL_CLIENT_ID_DI_SINI.apps.googleusercontent.com` dengan Client ID dari Langkah 2, lalu klik ikon **Simpan**.
-4. Klik **Deploy → New deployment**, klik ikon gerigi, lalu pilih **Web app**:
+4. Di toolbar editor, pilih fungsi **siapkanSheet**, lalu klik **Run** dan izinkan aksesnya. Tab Pembayaran Sewa Kantor, Pembayaran Rutin, Jadwal Meeting, Task & Report, serta tab sistem (`_Kategori`, `_Pengguna`, `_Riwayat`, `_Pengaturan`) langsung terbentuk, dan lembar kosong "Sheet1" dihapus.
+5. Klik **Deploy → New deployment**, klik ikon gerigi, lalu pilih **Web app**:
    * Execute as: **Me**
    * Who has access: **Anyone**
-5. Klik **Deploy**, lalu **Authorize access**, dan pilih akun Anda. Jika muncul peringatan *Google hasn't verified this app*, klik **Advanced → Go to … (unsafe)** lalu **Allow**. Peringatan ini wajar karena skripnya milik Anda sendiri.
-6. Salin **Web app URL** (berakhiran `/exec`).
+6. Klik **Deploy**. Jika diminta **Authorize access**, pilih akun Anda. Jika muncul peringatan *Google hasn't verified this app*, klik **Advanced → Go to … (unsafe)** lalu **Allow**. Peringatan ini wajar karena skripnya milik Anda sendiri.
+7. Salin **Web app URL** (berakhiran `/exec`).
 
-"Anyone" di sini tidak berarti data terbuka. Setiap permintaan tetap harus login Google dan dicocokkan dengan tab `_Pengguna`.
+"Anyone" di sini tidak berarti data terbuka. Setiap permintaan tetap harus login Google dan dicocokkan dengan tab `_Pengguna`. Pada akun Google Workspace, jika pilihan "Anyone" tidak tersedia (hanya ada "Anyone within domain"), minta Admin Google Workspace mengizinkan berbagi Web App Apps Script ke luar domain. Pilihan "Anyone within domain" tidak bisa dipakai, karena kalender di GitHub Pages memanggil Apps Script tanpa cookie login Google.
 
 ### Langkah 4: Hubungkan aplikasi
 
@@ -180,6 +183,7 @@ Commit dan push lewat VS Code (**Source Control → Commit → Sync Changes**). 
   * **Kontributor** bisa menambah jadwal dan mengubah atau menghapus jadwal miliknya sendiri. Jadwal milik orang lain hanya bisa dicentang Lunas/Selesai, dan izin ini bisa dimatikan di `_Pengaturan` (`kontributor_boleh_centang`).
   * **Pembaca** hanya bisa melihat.
 * Mengubah `Aktif` menjadi FALSE langsung mencabut akses.
+* Alternatif untuk satu domain kantor: di `_Pengaturan`, isi `mode_akses` = `domain` dan `domain_kantor` = domain email kantor (misalnya `wmcenter.id`). Semua email domain itu bisa masuk sebagai Kontributor tanpa didaftarkan satu per satu; email yang tercantum di `_Pengguna` tetap memakai peran yang tertulis di sana.
 
 ### Langkah 6: Pindahkan data lama (opsional)
 
