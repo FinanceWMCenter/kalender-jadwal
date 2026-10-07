@@ -18,7 +18,10 @@ Aplikasi ini murni HTML, CSS, dan JavaScript tanpa framework atau build step, se
 kalender/
 ├── index.html        Struktur halaman, navbar, sidebar, dan modal
 ├── style.css         Tema pastel, layout, dan tampilan responsif
-├── app.js            Logika kalender, CSV, pengingat, dan localStorage
+├── app.js            Logika kalender, CSV, pengingat, dan sinkron Google Sheet
+├── config.js         Pengaturan sambungan Google Sheet (kosong = mode lokal)
+├── apps-script/
+│   └── Code.gs       Kode Apps Script yang ditempel di Google Sheet
 ├── contoh-data.csv   Contoh jadwal sewa (data fiktif) untuk mencoba Upload CSV
 └── README.md
 ```
@@ -106,11 +109,102 @@ Data contoh hanya dimuat sekali, saat aplikasi pertama kali dibuka di sebuah bro
 
 **Ekspor semua ke CSV** menghasilkan file berpemisah titik koma dengan kolom `No;Kategori;Judul;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;PPN;PPh;Masa_Sewa;Waktu;Catatan;Status`, yang bisa langsung diimpor kembali.
 
-## Tentang penyimpanan data
+## Dua mode penyimpanan
+
+| | Mode lokal (`config.js` kosong) | Mode Google Sheet (`config.js` diisi) |
+|---|---|---|
+| Tempat data | Browser masing-masing | Satu Google Sheet milik Admin |
+| Login | Tidak ada | Akun Google, hanya email yang diizinkan |
+| Antarperangkat / antarorang | Terpisah | Sama untuk semua, tersinkron otomatis |
+| Edit langsung di Sheet | - | Muncul di kalender dalam ±20 detik |
+
+Semua fitur kalender (Create, Upload CSV, kategori tambahan, pengingat, ekspor, dan seterusnya) tersedia di kedua mode.
+
+## Mode Google Sheet: cara memasang
+
+Lakukan sekali saja dengan akun Google yang akan menjadi **Admin** (pemilik spreadsheet). Siapkan sekitar 20 menit.
+
+### Langkah 1: Siapkan Google Sheet
+
+1. Unggah `template-kalender-kosong.xlsx` ke Google Drive, klik kanan, lalu pilih **Buka dengan → Google Spreadsheet** dan **File → Simpan sebagai Google Spreadsheet**. Spreadsheet kosong biasa juga bisa; tab yang dibutuhkan dibuat otomatis.
+2. Buka **File → Setelan**, lalu pastikan **Zona waktu** = *(GMT+07:00) Jakarta*.
+
+### Langkah 2: Buat OAuth Client ID (untuk tombol "Masuk dengan Google")
+
+1. Buka https://console.cloud.google.com, lalu buat project baru, misalnya `Kalender WM`.
+2. Buka **Google Auth Platform** (dulu bernama *OAuth consent screen*) dan klik **Get started**:
+   * App name: `Calendar`, User support email: email Anda.
+   * Audience: **External**.
+   * Contact information: email Anda, lalu **Create**.
+3. Buka menu **Audience**, lalu klik **Publish app** sehingga statusnya *In production*. Untuk login dasar (nama dan email), langkah ini tidak memerlukan verifikasi Google. Tanpa langkah ini, hanya email yang didaftarkan sebagai *test user* yang bisa login.
+4. Buka menu **Clients** (atau **APIs & Services → Credentials**), lalu klik **Create client**:
+   * Application type: **Web application**.
+   * **Authorized JavaScript origins**, tambahkan:
+     * `https://financewmcenter.github.io`
+     * `http://localhost:5500`
+     * `http://127.0.0.1:5500`
+   * Klik **Create**, lalu salin **Client ID** (berakhiran `.apps.googleusercontent.com`).
+
+### Langkah 3: Pasang Apps Script
+
+1. Di Google Sheet, buka **Ekstensi → Apps Script**.
+2. Hapus semua isi `Code.gs`, lalu tempel seluruh isi file `apps-script/Code.gs` dari proyek ini.
+3. Di bagian atas, ganti `TEMPEL_CLIENT_ID_DI_SINI.apps.googleusercontent.com` dengan Client ID dari Langkah 2, lalu klik ikon **Simpan**.
+4. Klik **Deploy → New deployment**, klik ikon gerigi, lalu pilih **Web app**:
+   * Execute as: **Me**
+   * Who has access: **Anyone**
+5. Klik **Deploy**, lalu **Authorize access**, dan pilih akun Anda. Jika muncul peringatan *Google hasn't verified this app*, klik **Advanced → Go to … (unsafe)** lalu **Allow**. Peringatan ini wajar karena skripnya milik Anda sendiri.
+6. Salin **Web app URL** (berakhiran `/exec`).
+
+"Anyone" di sini tidak berarti data terbuka. Setiap permintaan tetap harus login Google dan dicocokkan dengan tab `_Pengguna`.
+
+### Langkah 4: Hubungkan aplikasi
+
+Isi `config.js`:
+
+```js
+window.CALENDAR_CONFIG = {
+  appsScriptUrl: 'https://script.google.com/macros/s/XXXXXXXX/exec',
+  googleClientId: 'XXXXXXXX.apps.googleusercontent.com',
+};
+```
+
+Commit dan push lewat VS Code (**Source Control → Commit → Sync Changes**). Dalam 1–2 menit, situs GitHub Pages menampilkan layar login.
+
+### Langkah 5: Atur pengguna
+
+* Pemilik spreadsheet otomatis menjadi **Admin**.
+* Tambahkan pengguna lain di tab `_Pengguna`: kolom `Email`, `Nama`, `Peran` (Admin / Kontributor / Pembaca), dan `Aktif` (TRUE/FALSE). Isi juga baris untuk email Anda sendiri agar **nama** Anda yang tampil di kalender, bukan alamat email.
+* Hak akses:
+  * **Admin** bisa melakukan semuanya.
+  * **Kontributor** bisa menambah jadwal dan mengubah atau menghapus jadwal miliknya sendiri. Jadwal milik orang lain hanya bisa dicentang Lunas/Selesai, dan izin ini bisa dimatikan di `_Pengaturan` (`kontributor_boleh_centang`).
+  * **Pembaca** hanya bisa melihat.
+* Mengubah `Aktif` menjadi FALSE langsung mencabut akses.
+
+### Langkah 6: Pindahkan data lama (opsional)
+
+Jika sebelumnya Anda memakai mode lokal di browser yang sama, di **Kelola data** akan muncul tombol **Kirim … jadwal dari browser ini ke Sheet**. Cara lainnya: ekspor CSV dari browser lama, lalu **Upload CSV** setelah login.
+
+### Cara kerja sinkron
+
+* Setiap kategori adalah satu **tab** di Sheet. Tab baru otomatis menjadi kategori baru. Tab berawalan `_` adalah tab sistem.
+* Perubahan dari kalender tertulis ke Sheet dalam 1–2 detik. Perubahan langsung di Sheet terbaca kalender setiap ±20 detik (atur di `_Pengaturan`), dan setiap kali halaman dibuka kembali.
+* Kolom sistem (ID, Dibuat_Oleh, Diubah_Oleh, Diubah_Pada, Dihapus, dan lain-lain) diisi otomatis. Jangan diubah manual.
+* Menghapus dari kalender tidak menghapus baris, hanya mengisi `Dihapus = TRUE`, sehingga bisa dipulihkan.
+* Jika dua orang mengubah jadwal yang sama hampir bersamaan, yang menyimpan belakangan diberi tahu dan datanya dimuat ulang, sehingga tidak ada perubahan yang tertimpa diam-diam.
+* Semua perubahan tercatat di tab `_Riwayat` dan tampil di tab **Aktivitas** pada sidebar kanan.
+* Baris yang belum bisa ditampilkan (misalnya tanggal kosong) diberi keterangan di kolom `Catatan_Sistem` dan ditampilkan ke Admin di tab Aktivitas.
+* Perubahan butuh koneksi internet. Jika koneksi terputus saat menyimpan, perubahan itu dibatalkan dan Anda diberi tahu. Kalender tetap menampilkan data terakhir.
+
+### Memperbarui Apps Script di kemudian hari
+
+Setelah mengganti isi `Code.gs`, buka **Deploy → Manage deployments**, klik ikon pensil, pilih **Version: New version**, lalu **Deploy**. URL Web App tidak berubah.
+
+## Penyimpanan di mode lokal
 
 Data disimpan di `localStorage` browser masing-masing pengguna. Artinya:
 
-- Kode di repository bersifat publik, tetapi **data jadwal dan nominal Anda tidak ikut terunggah** dan tidak bisa dilihat orang lain yang membuka link GitHub Pages.
+- Kode di repository bersifat publik, tetapi **data jadwal dan nominal Anda tidak ikut terunggah**.
 - Setiap browser dan perangkat punya datanya sendiri. Gunakan **Ekspor semua ke CSV** lalu **Upload CSV** untuk memindahkan data.
 - Menghapus data situs atau cache browser akan menghapus jadwal. Ekspor CSV secara berkala sebagai cadangan.
 

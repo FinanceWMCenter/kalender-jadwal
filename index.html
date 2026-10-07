@@ -57,6 +57,10 @@
       </div>
 
       <div class="topbar__group topbar__right">
+        <button type="button" class="sync-pill" id="syncStatus" data-popover-trigger hidden title="Status sinkron Google Sheet">
+          <span class="sync-pill__dot" aria-hidden="true"></span>
+          <span class="sync-pill__text" id="syncText">Memuat…</span>
+        </button>
         <div class="segmented" id="viewSwitch" role="group" aria-label="Pilih tampilan">
           <button type="button" data-view="month" title="Month (M)"><span class="lg">Month</span><span class="sm">M</span></button>
           <button type="button" data-view="week" title="Week (W)"><span class="lg">Week</span><span class="sm">W</span></button>
@@ -65,6 +69,10 @@
         <button type="button" class="icon-btn" id="btnToggleRight" aria-label="Buka panel pengingat" aria-controls="sidebarRight" aria-expanded="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15.5 6 9" /><path d="M10.2 20.5a2 2 0 0 0 3.6 0" /></svg>
           <span class="badge" id="bellBadge" hidden>0</span>
+        </button>
+        <button type="button" class="user-btn" id="btnUser" data-popover-trigger hidden aria-label="Akun dan sinkron" aria-haspopup="dialog" aria-controls="userPopover">
+          <span id="userInitial">?</span>
+          <span class="user-btn__dot" aria-hidden="true"></span>
         </button>
       </div>
     </header>
@@ -94,7 +102,7 @@
         <section aria-labelledby="myCalTitle">
           <h2 class="side-title" id="myCalTitle">My Calendars</h2>
           <ul class="cal-filters" id="calFilters"></ul>
-          <button type="button" class="link-btn link-btn--add" data-action="add-category">+ Tambah kategori</button>
+          <button type="button" class="link-btn link-btn--add" id="btnAddCategory" data-action="add-category">+ Tambah kategori</button>
           <label class="cal-filter cal-filter--plain">
             <input type="checkbox" class="chk chk--lg" id="chkShowDone" checked />
             <span class="cal-filter__name">Tampilkan yang sudah selesai</span>
@@ -108,6 +116,7 @@
           <div class="data-actions">
             <button type="button" class="link-btn" id="btnTemplate">Unduh template CSV</button>
             <button type="button" class="link-btn" id="btnExport">Ekspor semua ke CSV</button>
+            <button type="button" class="link-btn link-btn--add" id="btnMigrate" hidden>Kirim jadwal dari browser ini ke Sheet</button>
             <button type="button" class="link-btn" id="btnSample">Muat data contoh</button>
             <button type="button" class="link-btn" id="btnClearSample">Hapus data contoh</button>
             <button type="button" class="link-btn link-btn--danger" id="btnClear">Hapus semua data</button>
@@ -135,12 +144,14 @@
               Pengingat <span class="rs-tab__count" id="tabRemindersCount"></span>
             </button>
             <button type="button" class="rs-tab" role="tab" id="tabDetail" data-action="tab" data-tab="detail" aria-controls="panelDetail" aria-selected="false">Detail</button>
+            <button type="button" class="rs-tab" role="tab" id="tabActivity" data-action="tab" data-tab="activity" aria-controls="panelActivity" aria-selected="false" hidden>Aktivitas</button>
             <button type="button" class="icon-btn icon-btn--sm" id="btnCloseRight" aria-label="Tutup panel kanan">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
           <div class="rs-panel" id="panelReminders" role="tabpanel" aria-labelledby="tabReminders"></div>
           <div class="rs-panel" id="panelDetail" role="tabpanel" aria-labelledby="tabDetail" hidden></div>
+          <div class="rs-panel" id="panelActivity" role="tabpanel" aria-labelledby="tabActivity" hidden></div>
         </div>
       </div>
     </aside>
@@ -379,7 +390,7 @@
         <button type="button" class="btn btn--danger-text" id="cDelete" hidden>Hapus kategori</button>
         <span class="spacer"></span>
         <button type="button" class="btn btn--text" data-close>Batal</button>
-        <button type="submit" class="btn btn--primary">Simpan</button>
+        <button type="submit" class="btn btn--primary" id="cSave">Simpan</button>
       </footer>
     </form>
   </dialog>
@@ -398,8 +409,35 @@
   <!-- ===================== POPOVER & TOAST ===================== -->
   <div class="popover popover--picker" id="periodPicker" role="dialog" aria-label="Pilih bulan dan tahun" hidden></div>
   <div class="popover popover--day" id="dayPopover" role="dialog" aria-label="Semua event pada tanggal ini" hidden></div>
+  <div class="popover popover--user" id="userPopover" role="dialog" aria-label="Akun dan sinkron" hidden></div>
+
+  <!-- ===================== LAYAR LOGIN (mode Google Sheet) ===================== -->
+  <div class="login-screen" id="loginScreen" hidden>
+    <div class="login-card">
+      <svg class="login-logo" viewBox="0 0 40 40" aria-hidden="true">
+        <defs>
+          <clipPath id="loginLogoClip"><rect x="3" y="4" width="34" height="33" rx="9" /></clipPath>
+        </defs>
+        <g clip-path="url(#loginLogoClip)">
+          <rect x="3" y="4" width="34" height="33" fill="#FFFFFF" />
+          <rect x="3" y="4" width="8.5" height="9" fill="#E4826F" />
+          <rect x="11.5" y="4" width="8.5" height="9" fill="#D9A92E" />
+          <rect x="20" y="4" width="8.5" height="9" fill="#5C8DE8" />
+          <rect x="28.5" y="4" width="8.5" height="9" fill="#9878D6" />
+        </g>
+        <rect x="3.5" y="4.5" width="33" height="32" rx="8.5" fill="none" stroke="#D3D9E4" />
+      </svg>
+      <h1 class="login-title">Calendar</h1>
+      <p class="login-text">Masuk dengan akun Google yang sudah diberi akses untuk melihat dan mengelola jadwal bersama.</p>
+      <div class="login-button" id="loginButton"></div>
+      <p class="login-status" id="loginStatus" aria-live="polite"></p>
+      <p class="login-error" id="loginError" role="alert"></p>
+      <p class="login-note">Data tersimpan di Google Sheet milik Admin. Belum punya akses? Hubungi Admin kalender.</p>
+    </div>
+  </div>
   <div class="toast-stack" id="toasts" aria-live="polite"></div>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

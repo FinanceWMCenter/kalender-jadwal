@@ -19,7 +19,7 @@
 
   const WEEK_START = 1;            // 0 = Minggu, 1 = Senin
   const HOUR_PX = 48;              // tinggi 1 jam di tampilan Week/Day
-  const REMINDER_DAYS = 30;        // pengingat aktif dari H-30 sampai Hari-H
+  let REMINDER_DAYS = 30;          // pengingat aktif dari H-30 sampai Hari-H (bisa diatur dari Google Sheet)
   const URGENT_DAYS = 7;           // dihitung di badge lonceng
   const NOTIFY_MILESTONES = [30, 14, 7, 3, 1, 0];
   const CHIP_H = 22;
@@ -48,6 +48,10 @@
     lime:   { name: 'Hijau muda', bg: '#E8F2CF', hover: '#DBEBB6', accent: '#8CB23A', text: '#44591A' },
     sand:   { name: 'Cokelat', bg: '#EFE5D8', hover: '#E6D7C4', accent: '#A98559', text: '#5A4024' },
     slate:  { name: 'Abu-abu', bg: '#E5E8ED', hover: '#D7DBE2', accent: '#7A8494', text: '#3A4150' },
+    coral:  { name: 'Coral', bg: '#FCE1DC', hover: '#F9D1C9', accent: '#E4826F', text: '#7A2E22' },
+    gold:   { name: 'Kuning', bg: '#FCEFC6', hover: '#F8E4A6', accent: '#D9A92E', text: '#684C00' },
+    blue:   { name: 'Biru', bg: '#DCE8FC', hover: '#C9DBFA', accent: '#5C8DE8', text: '#1D4690' },
+    purple: { name: 'Ungu', bg: '#E9E0F8', hover: '#DCCFF4', accent: '#9878D6', text: '#4B2F8A' },
   };
   const VIEWS = ['month', 'week', 'day'];
 
@@ -109,6 +113,7 @@
     layers: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
     range: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7 15h10"/></svg>',
     info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
+    user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
     repeat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
   };
@@ -256,6 +261,7 @@
   }
 
   function saveCategories() {
+    if (SYNC.on) return;   // mode sinkron: kategori disimpan sebagai tab di Google Sheet
     const custom = catKeys().filter((k) => CATEGORIES[k].custom)
       .map((k) => ({ key: k, label: CATEGORIES[k].label, payment: CATEGORIES[k].payment, color: CATEGORIES[k].color }));
     storageSet(CATEGORIES_KEY, JSON.stringify(custom));
@@ -295,6 +301,7 @@
     els.cColors.innerHTML = Object.entries(PALETTE).map(([k, v]) => `<label class="swatch" title="${v.name}" style="--sw:${v.accent};--sw-bg:${v.bg}">`
       + `<input type="radio" name="catColor" value="${k}" ${k === color ? 'checked' : ''} aria-label="${v.name}"><span></span></label>`).join('');
     els.cDelete.hidden = !c;
+    els.cDelete.textContent = SYNC.on ? 'Sembunyikan kategori' : 'Hapus kategori';
     els.cError.textContent = '';
     els.categoryModal.showModal();
     setTimeout(() => els.cName.focus(), 0);
@@ -307,6 +314,7 @@
     if (findCategoryByLabel(label, editingCategory)) { els.cError.textContent = 'Nama kategori sudah dipakai.'; els.cName.focus(); return; }
     const picked = els.cColors.querySelector('input[name="catColor"]:checked');
     const color = picked ? picked.value : 'slate';
+    if (SYNC.on) { saveCategorySync(label, color, els.cPayment.checked); return; }
     const key = editingCategory || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     CATEGORIES[key] = { label: label.slice(0, 40), short: label.slice(0, 40), payment: els.cPayment.checked, color, custom: true };
     saveCategories();
@@ -325,6 +333,7 @@
     const cat = CATEGORIES[key];
     const related = state.events.filter((ev) => ev.kategori === key);
     els.categoryModal.close();
+    if (SYNC.on) { hideCategorySync(cat); return; }
     const choice = await askConfirm({
       title: `Hapus kategori "${cat.label}"?`,
       message: related.length
@@ -404,10 +413,15 @@
       pph: toAmount(raw.pph),
       extra,
       selesai: Boolean(raw.selesai),
-      selesaiPada: raw.selesai ? (raw.selesaiPada || new Date().toISOString()) : null,
+      selesaiPada: raw.selesai ? (raw.selesaiPada === undefined ? new Date().toISOString() : (raw.selesaiPada || null)) : null,
+      selesaiOleh: raw.selesai ? cleanText(raw.selesaiOleh, 120).toLowerCase() : '',
       sumber: ['csv', 'contoh'].includes(raw.sumber) ? raw.sumber : 'manual',
       seriesId: raw.seriesId || null,
       dibuat: raw.dibuat || new Date().toISOString(),
+      dibuatOleh: cleanText(raw.dibuatOleh, 120).toLowerCase(),
+      dibuatPada: cleanText(raw.dibuatPada, 40),
+      diubahOleh: cleanText(raw.diubahOleh, 120).toLowerCase(),
+      diubahPada: cleanText(raw.diubahPada, 40),
     };
   }
 
@@ -453,6 +467,7 @@
   }
 
   function saveEvents() {
+    if (SYNC.on) { queuePush(); return; }
     if (!storageSet(STORAGE_KEY, JSON.stringify(state.events))) {
       toast('Penyimpanan browser penuh atau diblokir, jadi perubahan belum tersimpan. Ekspor ke CSV sebagai cadangan.', { timeout: 8000 });
     }
@@ -462,7 +477,7 @@
     try {
       const p = JSON.parse(storageGet(PREFS_KEY) || '{}');
       if (VIEWS.includes(p.view)) state.view = p.view;
-      if (p.filters) catKeys().forEach((k) => { if (p.filters[k] === false) state.filters[k] = false; });
+      if (p.filters) Object.keys(p.filters).forEach((k) => { if (p.filters[k] === false) state.filters[k] = false; });
       if (typeof p.showDone === 'boolean') state.showDone = p.showDone;
       if (typeof p.leftOpen === 'boolean' && !isMobile()) state.leftOpen = p.leftOpen;
       if (hasCat(p.lastKategori)) state.lastKategori = p.lastKategori;
@@ -559,16 +574,19 @@
     'Sewa Cabang Selatan – Periode 3', 'Sewa Cabang Selatan – Periode 2',
   ]);
 
-  function findSampleEvents() {
-    const tagged = state.events.filter((ev) => ev.sumber === 'contoh');
+  function findSampleEvents(list) {
+    if (!list && SYNC.on) return [];
+    const src = list || state.events;
+    const tagged = src.filter((ev) => ev.sumber === 'contoh');
     // Data contoh versi lama: judul contoh yang dibuat bersamaan dalam satu waktu (minimal 8 event)
-    const legacy = state.events.filter((ev) => ev.sumber === 'manual' && SAMPLE_TITLES.has(ev.judul));
+    const legacy = src.filter((ev) => ev.sumber === 'manual' && SAMPLE_TITLES.has(ev.judul));
     const batch = {};
     legacy.forEach((ev) => { batch[ev.dibuat] = (batch[ev.dibuat] || 0) + 1; });
     return [...tagged, ...legacy.filter((ev) => batch[ev.dibuat] >= 8)];
   }
 
   async function clearSamples() {
+    if (SYNC.on) return;
     const samples = findSampleEvents();
     if (!samples.length) { toast('Tidak ada data contoh di kalender.'); return; }
     const ok = await askConfirm({
@@ -602,6 +620,7 @@
     renderReminders();
     renderRightTabs();
     renderDetail();
+    renderActivity();
     applyLayout();
     savePrefs();
     if (focusedFilter) {
@@ -617,6 +636,7 @@
     renderSummary();
     renderReminders();
     renderDetail();
+    renderActivity();
   }
 
   function periodLabel() {
@@ -723,8 +743,8 @@
       statusText(ev),
     ].filter(Boolean).join('\n');
     const id = escapeHTML(ev.id);
-    return `<div class="chip cat-${ev.kategori}${done}${isSel}" data-action="open" data-id="${id}" draggable="true" tabindex="0" role="button" title="${escapeHTML(tip)}">`
-      + `<input type="checkbox" class="chk" data-id="${id}" ${ev.selesai ? 'checked' : ''} aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
+    return `<div class="chip cat-${ev.kategori}${done}${isSel}" data-action="open" data-id="${id}" draggable="${canEdit(ev)}" tabindex="0" role="button" title="${escapeHTML(tip)}">`
+      + `<input type="checkbox" class="chk" data-id="${id}" ${ev.selesai ? 'checked' : ''}${canToggle(ev) ? '' : ' disabled'} aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
       + `${time}<span class="chip__title">${escapeHTML(ev.judul)}</span></div>`;
   }
 
@@ -836,10 +856,10 @@
     const id = escapeHTML(ev.id);
     const cls = `tev cat-${ev.kategori}${ev.selesai ? ' is-done' : ''}${state.selectedId === ev.id ? ' is-selected' : ''}${compact ? ' is-compact' : ''}`;
     const tip = [ev.judul, fmtTimeRange(ev), ev.nominal ? fmtIDR(ev.nominal) : '', statusText(ev)].filter(Boolean).join('\n');
-    return `<div class="${cls}" data-action="open" data-id="${id}" draggable="true" tabindex="0" role="button" title="${escapeHTML(tip)}" `
+    return `<div class="${cls}" data-action="open" data-id="${id}" draggable="${canEdit(ev)}" tabindex="0" role="button" title="${escapeHTML(tip)}" `
       + `style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${w}% - 4px)">`
       + '<div class="tev__top">'
-      + `<input type="checkbox" class="chk" data-id="${id}" ${ev.selesai ? 'checked' : ''} aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
+      + `<input type="checkbox" class="chk" data-id="${id}" ${ev.selesai ? 'checked' : ''}${canToggle(ev) ? '' : ' disabled'} aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
       + `<span class="tev__title">${escapeHTML(ev.judul)}</span>`
       + (compact ? `<span class="tev__time">${ev.mulai}</span>` : '')
       + '</div>'
@@ -893,7 +913,7 @@
       + `<span class="cal-filter__name">${escapeHTML(CATEGORIES[k].label)}</span>`
       + `<span class="cal-filter__count" title="Jumlah di ${MONTHS[state.cursor.getMonth()]}">${counts[k]}</span>`
       + '</label>'
-      + (CATEGORIES[k].custom ? `<button type="button" class="icon-btn icon-btn--xs cal-filter__edit" data-action="edit-category" data-cat="${k}" aria-label="Edit kategori ${escapeHTML(CATEGORIES[k].label)}">${ICON.pencil}</button>` : '')
+      + (CATEGORIES[k].custom && isAdmin() ? `<button type="button" class="icon-btn icon-btn--xs cal-filter__edit" data-action="edit-category" data-cat="${k}" aria-label="Edit kategori ${escapeHTML(CATEGORIES[k].label)}">${ICON.pencil}</button>` : '')
       + '</li>').join('');
     els.chkShowDone.checked = state.showDone;
   }
@@ -944,7 +964,7 @@
     const id = escapeHTML(ev.id);
     const date = parseISO(ev.tanggal);
     return `<li class="rem cat-${ev.kategori}">`
-      + `<input type="checkbox" class="chk" data-id="${id}" aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
+      + `<input type="checkbox" class="chk" data-id="${id}"${canToggle(ev) ? '' : ' disabled'} aria-label="${escapeHTML(`Tandai ${doneWord(ev).toLowerCase()}: ${ev.judul}`)}">`
       + `<button type="button" class="rem__body" data-action="reveal" data-id="${id}">`
       + `<span class="rem__title">${escapeHTML(ev.judul)}</span>`
       + `<span class="rem__meta">${fmtDateShort(date)} ${date.getFullYear()}${ev.mulai ? `, ${ev.mulai}` : ''}</span>`
@@ -1036,12 +1056,17 @@
     ev.extra.forEach((x) => rows.push(detailRow(ICON.info, escapeHTML(x.label), escapeHTML(x.value))));
     if (ev.catatan) rows.push(detailRow(ICON.note, 'Catatan', `<span class="pre">${escapeHTML(ev.catatan)}</span>`));
 
-    let doneAt = '';
-    if (ev.selesai && ev.selesaiPada) {
-      const t = new Date(ev.selesaiPada);
-      if (!Number.isNaN(t.getTime())) doneAt = ` <span class="muted small">pada ${fmtDateMedium(t)}, ${pad2(t.getHours())}:${pad2(t.getMinutes())}</span>`;
-    }
+    const doneStamp = ev.selesai ? fmtStamp(ev.selesaiPada) : '';
+    const doneAt = doneStamp ? ` <span class="muted small">pada ${doneStamp}</span>` : '';
     rows.push(detailRow(ICON.status, 'Status', `<span class="status-pill${ev.selesai ? ' is-done' : ''}">${statusText(ev)}</span>${doneAt}`));
+
+    if (SYNC.on) {
+      const who = (email) => (email ? escapeHTML(userLabel(email)) : 'Admin (langsung di Google Sheet)');
+      const when = (stampText) => (fmtStamp(stampText) ? ` <span class="muted small">${fmtStamp(stampText)}</span>` : '');
+      rows.push(detailRow(ICON.user, 'Dibuat oleh', `${who(ev.dibuatOleh)}${when(ev.dibuatPada)}`));
+      if (ev.diubahOleh) rows.push(detailRow(ICON.pencil, 'Terakhir diubah', `${who(ev.diubahOleh)}${when(ev.diubahPada)}`));
+      if (ev.selesai && ev.selesaiOleh) rows.push(detailRow(ICON.status, `${word} oleh`, who(ev.selesaiOleh)));
+    }
 
     const series = ev.seriesId ? state.events.filter((e) => e.seriesId === ev.seriesId).sort((a, b) => a.tanggal.localeCompare(b.tanggal)) : [];
     if (series.length > 1) {
@@ -1055,20 +1080,27 @@
       + `<dl class="detail__list">${rows.join('')}</dl>`
       + `<p class="detail__source">${{ csv: 'Diimpor dari CSV', contoh: 'Data contoh' }[ev.sumber] || 'Dibuat manual'}</p>`
       + '<div class="detail__actions">'
-      + `<button type="button" class="btn ${ev.selesai ? 'btn--outline' : 'btn--primary'} btn--block" data-action="toggle-status" data-id="${id}">${ev.selesai ? `Batalkan status ${word.toLowerCase()}` : `Tandai ${word.toLowerCase()}`}</button>`
+      + (canToggle(ev) ? `<button type="button" class="btn ${ev.selesai ? 'btn--outline' : 'btn--primary'} btn--block" data-action="toggle-status" data-id="${id}">${ev.selesai ? `Batalkan status ${word.toLowerCase()}` : `Tandai ${word.toLowerCase()}`}</button>` : '')
       + '<div class="detail__row-actions">'
-      + `<button type="button" class="btn btn--outline" data-action="edit" data-id="${id}">Edit</button>`
+      + (canEdit(ev) ? `<button type="button" class="btn btn--outline" data-action="edit" data-id="${id}">Edit</button>` : '')
       + `<button type="button" class="btn btn--outline" data-action="reveal" data-id="${id}">Lihat di kalender</button>`
-      + `<button type="button" class="btn btn--danger-text" data-action="delete" data-id="${id}">Hapus</button>`
-      + '</div></div></article>';
+      + (canEdit(ev) ? `<button type="button" class="btn btn--danger-text" data-action="delete" data-id="${id}">Hapus</button>` : '')
+      + '</div>'
+      + (SYNC.on && !canEdit(ev) ? '<p class="detail__lock">Jadwal ini milik pengguna lain, sehingga hanya bisa dilihat.</p>' : '')
+      + '</div></article>';
   }
 
   function renderRightTabs() {
-    const isRem = state.rightTab === 'reminders';
-    els.tabReminders.setAttribute('aria-selected', String(isRem));
-    els.tabDetail.setAttribute('aria-selected', String(!isRem));
-    els.panelReminders.hidden = !isRem;
-    els.panelDetail.hidden = isRem;
+    if (state.rightTab === 'activity' && !SYNC.on) state.rightTab = 'reminders';
+    const tabs = {
+      reminders: [els.tabReminders, els.panelReminders],
+      detail: [els.tabDetail, els.panelDetail],
+      activity: [els.tabActivity, els.panelActivity],
+    };
+    Object.entries(tabs).forEach(([k, pair]) => {
+      pair[0].setAttribute('aria-selected', String(state.rightTab === k));
+      pair[1].hidden = state.rightTab !== k;
+    });
   }
 
   function applyLayout() {
@@ -1096,10 +1128,10 @@
   /* -----------------------------------------------------------
      6. POPOVER
      ----------------------------------------------------------- */
-  function anyPopoverOpen() { return !els.periodPicker.hidden || !els.dayPopover.hidden; }
+  function anyPopoverOpen() { return !els.periodPicker.hidden || !els.dayPopover.hidden || !els.userPopover.hidden; }
 
   function closePopovers(except) {
-    [els.periodPicker, els.dayPopover].forEach((p) => { if (p !== except) p.hidden = true; });
+    [els.periodPicker, els.dayPopover, els.userPopover].forEach((p) => { if (p !== except) p.hidden = true; });
     els.btnPeriod.setAttribute('aria-expanded', String(!els.periodPicker.hidden));
   }
 
@@ -1224,6 +1256,7 @@
   function toggleDone(id, force, silent) {
     const ev = getEvent(id);
     if (!ev) return;
+    if (!canToggle(ev)) { render(); return; }
     const next = typeof force === 'boolean' ? force : !ev.selesai;
     if (next === ev.selesai) return;
     ev.selesai = next;
@@ -1247,7 +1280,7 @@
 
   async function deleteEvent(id) {
     const ev = getEvent(id);
-    if (!ev) return;
+    if (!ev || !canEdit(ev)) return;
     const series = ev.seriesId ? state.events.filter((e) => e.seriesId === ev.seriesId) : [ev];
     let choice;
     if (series.length > 1) {
@@ -1286,7 +1319,7 @@
 
   function moveEvent(id, target, clientY, grabMin) {
     const ev = getEvent(id);
-    if (!ev) return;
+    if (!ev || !canEdit(ev)) return;
     const before = { tanggal: ev.tanggal, mulai: ev.mulai, durasi: ev.durasi };
     const date = target.dataset.date;
     const kind = target.dataset.drop;
@@ -1315,6 +1348,7 @@
   }
 
   async function clearAll() {
+    if (SYNC.on) return;
     if (!state.events.length) { toast('Kalender sudah kosong.'); return; }
     const choice = await askConfirm({
       title: 'Hapus semua data?',
@@ -1340,6 +1374,7 @@
   }
 
   function loadSample() {
+    if (SYNC.on) return;
     const keys = new Set(state.events.map(dupKey));
     const add = sampleEvents().filter((ev) => !keys.has(dupKey(ev)));
     if (!add.length) { toast('Data contoh sudah ada di kalender.'); return; }
@@ -1430,8 +1465,9 @@
   function openEventModal(opts) {
     const { id = null, date = null, mulai = null } = opts || {};
     closePopovers();
-    editingId = id;
     const ev = id ? getEvent(id) : null;
+    if (ev ? !canEdit(ev) : !canCreate()) return;
+    editingId = id;
 
     buildCategoryOptions();
     els.eventModalTitle.textContent = ev ? 'Edit event' : 'Event baru';
@@ -1561,7 +1597,7 @@
       const seriesId = dates.length > 1 ? uid() : null;
       const now = new Date().toISOString();
       let created = dates.map((t) => normalizeEvent({
-        ...data, tanggal: t, id: uid(), seriesId, sumber: 'manual', dibuat: now, selesaiPada: data.selesai ? now : null,
+        ...data, tanggal: t, id: uid(), seriesId, sumber: 'manual', dibuat: now, selesaiPada: data.selesai ? now : null, dibuatOleh: currentEmail(),
       })).filter(Boolean);
 
       const existing = new Set(state.events.map(dupKey));
@@ -1962,6 +1998,7 @@
     const { rows, col, extras } = p;
 
     // Mode ganti: data CSV lama di kategori yang sama akan dilepas; data contoh juga bila dicentang
+    if (SYNC.on && !isAdmin()) p.mode = 'add';
     const cats = importCategories(p);
     p.replaceable = state.events.filter((ev) => ev.sumber === 'csv' && cats.has(ev.kategori));
     p.samples = findSampleEvents();
@@ -2048,7 +2085,7 @@
       const selesai = statusRaw ? parseStatus(statusRaw) : (p.pastDone && dt.date < todayISO());
 
       const ev = normalizeEvent({
-        id: uid(), kategori, judul, tanggal: dt.date, mulai: dur.mulai, durasi: dur.durasi, nominal,
+        id: uid(), dibuatOleh: currentEmail(), kategori, judul, tanggal: dt.date, mulai: dur.mulai, durasi: dur.durasi, nominal,
         catatan: taxes.rest, cabang, unit, tahap, ppn, pph, extra,
         periodeMulai: periode ? periode.mulai : '', periodeSelesai: periode ? periode.selesai : '',
         selesai, selesaiPada: selesai ? now : null, sumber: 'csv', dibuat: now,
@@ -2117,7 +2154,7 @@
     const pastCount = p.results.filter((r) => r.ev && r.ev.tanggal < todayISO()).length;
     els.importPastWrap.hidden = pastCount === 0;
 
-    els.importModeWrap.hidden = p.replaceable.length === 0;
+    els.importModeWrap.hidden = p.replaceable.length === 0 || (SYNC.on && !isAdmin());
     els.importModeWrap.querySelectorAll('input[name="importMode"]').forEach((r) => { r.checked = r.value === p.mode; });
     els.importModeHint.textContent = p.mode === 'replace'
       ? `${p.replaceable.length} event hasil impor CSV sebelumnya akan diganti dengan isi file ini. Event yang dibuat manual tidak tersentuh, dan status lunas dipertahankan untuk jadwal yang sama.`
@@ -2390,8 +2427,9 @@
     switch (action) {
       case 'open': selectEvent(id); break;
       case 'reveal': revealEvent(id); break;
-      case 'create-day': openEventModal({ date }); break;
+      case 'create-day': if (canCreate()) openEventModal({ date }); break;
       case 'create-time': {
+        if (!canCreate()) break;
         const r = el.getBoundingClientRect();
         const min = Math.floor(((e.clientY - r.top) / HOUR_PX) * 2) * 30;
         openEventModal({ date, mulai: minToTime(clamp(min, 0, 1410)) });
@@ -2437,6 +2475,8 @@
       case 'create-first': openEventModal(); break;
       case 'add-category': openCategoryModal(); break;
       case 'edit-category': openCategoryModal(el.dataset.cat); break;
+      case 'sync-now': closePopovers(); reloadNow(); break;
+      case 'logout': closePopovers(); logout(''); break;
       case 'new-category-from-form': {
         // Simpan isian form, buat kategori, lalu pilih kategori baru itu
         openCategoryModal(null, (key) => { buildCategoryOptionsKeep(key); });
@@ -2487,6 +2527,9 @@
     els.btnSample.addEventListener('click', loadSample);
     els.btnClearSample.addEventListener('click', clearSamples);
     els.btnClear.addEventListener('click', clearAll);
+    els.btnMigrate.addEventListener('click', migrateLocal);
+    els.btnUser.addEventListener('click', toggleUserPopover);
+    els.syncStatus.addEventListener('click', toggleUserPopover);
     els.categoryForm.addEventListener('submit', saveCategory);
     els.cDelete.addEventListener('click', deleteCategory);
 
@@ -2612,7 +2655,7 @@
         case 'd': setView('day'); break;
         case 'arrowleft': case 'p': case 'k': shift(-1); break;
         case 'arrowright': case 'n': case 'j': shift(1); break;
-        case 'c': e.preventDefault(); openEventModal(); break;
+        case 'c': e.preventDefault(); if (canCreate()) openEventModal(); break;
         default: break;
       }
     });
@@ -2707,7 +2750,818 @@
   }
 
   /* -----------------------------------------------------------
-     13. INISIALISASI
+     13. SINKRON GOOGLE SHEET (aktif bila config.js diisi)
+     ----------------------------------------------------------- */
+  const SYNC_CFG = window.CALENDAR_CONFIG || {};
+  const SESSION_KEY = 'calendar.sync.session.v1';
+  const CACHE_KEY = 'calendar.sync.cache.v1';
+  const MIGRATED_KEY = 'calendar.sync.migrated.v1';
+  const SYNC = {
+    on: Boolean(String(SYNC_CFG.appsScriptUrl || '').trim() && String(SYNC_CFG.googleClientId || '').trim()),
+    url: String(SYNC_CFG.appsScriptUrl || '').trim(),
+    clientId: String(SYNC_CFG.googleClientId || '').trim(),
+    session: null,
+    me: null,
+    hash: null,
+    tabs: {},
+    map: new Map(),
+    settings: {},
+    users: {},
+    history: [],
+    invalid: [],
+    chain: Promise.resolve(),
+    busy: false,
+    dirty: false,
+    polling: false,
+    timer: null,
+    lastSync: null,
+    status: 'idle',
+    notesSent: '',
+    gisReady: false,
+  };
+  let migratable = [];
+
+  // Kolom default untuk tab baru (sama dengan Apps Script)
+  const SYS_COLS = ['ID', 'Dibuat_Oleh', 'Dibuat_Pada', 'Diubah_Oleh', 'Diubah_Pada', 'Dihapus'];
+  const TEMPLATE_HEADERS = {
+    sewa: ['No', 'Cabang', 'Sub_Unit', 'Term_Tahap', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'Durasi_Sewa', 'Catatan', 'Lunas', ...SYS_COLS],
+    pembayaran: ['Nama_Kegiatan', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'PPN', 'PPh', 'Catatan', 'Lunas', ...SYS_COLS],
+    agenda: ['Nama_Kegiatan', 'Tanggal', 'Jam_Mulai', 'Jam_Selesai', 'Catatan', 'Selesai', ...SYS_COLS],
+  };
+  // Nama kolom yang dikenali di Google Sheet (huruf kecil, spasi menjadi _)
+  const SHEET_FIELDS = {
+    no: ['no', 'nomor', 'no_urut'],
+    judul: ['nama_kegiatan', 'judul', 'nama', 'kegiatan', 'nama_event', 'event', 'title', 'uraian'],
+    tanggal: ['tanggal_jatuh_tempo', 'jatuh_tempo', 'tgl_jatuh_tempo', 'tanggal_bayar', 'tanggal', 'tgl', 'due_date', 'date'],
+    jamMulai: ['jam_mulai', 'mulai', 'jam', 'waktu', 'waktu_mulai'],
+    jamSelesai: ['jam_selesai', 'waktu_selesai'],
+    durasi: ['durasi', 'durasi_menit', 'duration'],
+    nominal: HEADER_ALIASES.nominal,
+    ppn: HEADER_ALIASES.ppn,
+    pph: HEADER_ALIASES.pph,
+    cabang: HEADER_ALIASES.cabang,
+    unit: HEADER_ALIASES.unit,
+    tahap: HEADER_ALIASES.tahap,
+    periode: HEADER_ALIASES.periode,
+    catatan: HEADER_ALIASES.catatan,
+    status: ['lunas', 'selesai', 'status', 'status_bayar'],
+  };
+  const SHEET_SYS = {
+    id: 'id', dibuatOleh: 'dibuat_oleh', dibuatPada: 'dibuat_pada', diubahOleh: 'diubah_oleh', diubahPada: 'diubah_pada',
+    dihapus: 'dihapus', selesaiOleh: 'selesai_oleh', selesaiPada: 'selesai_pada', seriesId: 'seri_id', sumber: 'sumber',
+    catatanSistem: 'catatan_sistem',
+  };
+  const SEM_FIELDS = ['kategori', 'judul', 'tanggal', 'mulai', 'durasi', 'nominal', 'ppn', 'pph', 'catatan', 'cabang', 'unit',
+    'tahap', 'periodeMulai', 'periodeSelesai', 'selesai', 'extra', 'seriesId', 'sumber'];
+  const STAMP_FIELDS = ['dibuatOleh', 'dibuatPada', 'diubahOleh', 'diubahPada', 'selesaiOleh', 'selesaiPada'];
+  const AKSI_LABEL = {
+    tambah: 'menambahkan', ubah: 'mengubah', hapus: 'menghapus', pulihkan: 'memulihkan', centang: 'menandai lunas/selesai',
+    batal_centang: 'membatalkan status', pindah: 'memindahkan', kategori_baru: 'membuat kategori',
+    kategori_ubah: 'mengubah kategori', kategori_sembunyi: 'menyembunyikan kategori',
+  };
+
+  /* ---------- Hak akses ---------- */
+  function role() { return SYNC.on ? ((SYNC.me && SYNC.me.role) || 'Pembaca') : 'Admin'; }
+  function isAdmin() { return role() === 'Admin'; }
+  function canCreate() { return role() !== 'Pembaca'; }
+  function currentEmail() { return SYNC.on && SYNC.me ? SYNC.me.email : ''; }
+  function canEdit(ev) {
+    if (!SYNC.on) return true;
+    const r = role();
+    if (r === 'Admin') return true;
+    if (r !== 'Kontributor' || !ev) return false;
+    return Boolean(ev.dibuatOleh) && ev.dibuatOleh === currentEmail();
+  }
+  function canToggle(ev) {
+    if (canEdit(ev)) return true;
+    return SYNC.on && role() === 'Kontributor' && SYNC.settings.kontributor_boleh_centang !== false;
+  }
+
+  /* ---------- Utilitas tampilan ---------- */
+  function storageRemove(key) { try { localStorage.removeItem(key); } catch (err) { /* abaikan */ } }
+  function cloneEv(ev) { return JSON.parse(JSON.stringify(ev)); }
+  function serializeEv(ev) { return JSON.stringify(SEM_FIELDS.map((f) => (ev[f] === undefined ? null : ev[f]))); }
+  function userLabel(email) {
+    if (!email) return '';
+    if (SYNC.users[email]) return SYNC.users[email];
+    if (SYNC.me && SYNC.me.email === email && SYNC.me.name) return SYNC.me.name;
+    return email;
+  }
+  function initials(name) {
+    const parts = String(name || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean);
+    return ((parts[0] || '?').charAt(0) + (parts[1] ? parts[1].charAt(0) : '')).toUpperCase();
+  }
+  function parseStamp(text) {
+    const s = String(text || '').trim();
+    if (!s) return null;
+    if (/T.*(Z|[+-]\d{2}:\d{2})$/.test(s)) {
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0)) : null;
+  }
+  function fmtStamp(text) {
+    const d = parseStamp(text);
+    return d ? `${fmtDateMedium(d)}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '';
+  }
+  function hashStr(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  /* ---------- Kategori = tab di Google Sheet ---------- */
+  function keyForTab(name) {
+    const n = normalizeText(name);
+    const builtin = Object.keys(BUILTIN_CATEGORIES).find((k) => normalizeText(BUILTIN_CATEGORIES[k].label) === n);
+    return builtin || `c${hashStr(n)}`;
+  }
+  function tabNameFor(key) { return (CATEGORIES[key] && (CATEGORIES[key].tab || CATEGORIES[key].label)) || key; }
+  function templateFor(key) {
+    if (key === 'sewa') return 'sewa';
+    return CATEGORIES[key] && CATEGORIES[key].payment ? 'pembayaran' : 'agenda';
+  }
+
+  function applyCategories(cats, tabs) {
+    catKeys().forEach((k) => { if (!BUILTIN_CATEGORIES[k]) delete CATEGORIES[k]; });
+    Object.keys(BUILTIN_CATEGORIES).forEach((k) => { CATEGORIES[k] = { ...BUILTIN_CATEGORIES[k], tab: BUILTIN_CATEGORIES[k].label }; });
+    tabs.forEach((t) => {
+      const key = keyForTab(t.name);
+      const row = cats.find((c) => normalizeText(c.tab) === normalizeText(t.name));
+      if (BUILTIN_CATEGORIES[key]) { CATEGORIES[key].tab = t.name; return; }
+      if (row && row.tampilkan === false) return;
+      const payment = row && row.jenis ? row.jenis === 'pembayaran' : mapHeaders(t.headers).fields.nominal !== undefined;
+      const color = row && PALETTE[row.warna] ? row.warna : 'slate';
+      CATEGORIES[key] = { label: t.name, short: t.name, payment, color, custom: true, tab: t.name };
+    });
+    renderCategoryStyles();
+  }
+
+  function mapHeaders(headers) {
+    const normed = headers.map(normHeader);
+    const used = new Set();
+    const fields = {};
+    const sys = {};
+    Object.entries(SHEET_SYS).forEach(([k, n]) => {
+      const i = normed.indexOf(n);
+      if (i !== -1) { sys[k] = i; used.add(i); }
+    });
+    Object.entries(SHEET_FIELDS).forEach(([k, aliases]) => {
+      for (const a of aliases) {
+        const i = normed.findIndex((h, idx) => h === a && !used.has(idx));
+        if (i !== -1) { fields[k] = i; used.add(i); break; }
+      }
+    });
+    const extras = [];
+    headers.forEach((h, i) => { if (!used.has(i) && String(h).trim()) extras.push({ idx: i, label: prettyHeader(h) }); });
+    return { fields, sys, extras };
+  }
+
+  function cleanTime(v) {
+    const s = String(v || '').trim();
+    const m = s.match(/^(\d{1,2})[:.](\d{2})(?:[:.]\d{2})?$/);
+    return m ? `${pad2(Number(m[1]))}:${m[2]}` : s;
+  }
+
+  // Satu baris Sheet -> event kalender (+ daftar masalah isian)
+  function rowToEvent(tabName, key, headers, row, mapped) {
+    const m = mapped || mapHeaders(headers);
+    const cells = row.cells || [];
+    const get = (f) => (m.fields[f] === undefined ? '' : String(cells[m.fields[f]] ?? '').trim());
+    const sys = (f) => (m.sys[f] === undefined ? '' : String(cells[m.sys[f]] ?? '').trim());
+    const res = { ev: null, problems: [], fatal: false, id: sys('id'), note: sys('catatanSistem'), deleted: /^(true|ya|yes|1)$/i.test(sys('dihapus')) };
+    if (!res.id) { res.fatal = true; return res; }
+
+    const cabang = get('cabang');
+    const unit = get('unit');
+    const tahap = get('tahap');
+    const tRaw = get('tanggal');
+    const dt = parseDateTime(tRaw);
+    if (!tRaw) { res.problems.push('Tanggal kosong'); res.fatal = true; } else if (!dt) { res.problems.push(`Tanggal "${tRaw}" tidak terbaca`); res.fatal = true; }
+    let judul = get('judul') || buildTitle({ kategori: key, cabang, unit, tahap });
+    if (!judul) {
+      if (key === 'sewa' || m.fields.cabang !== undefined) judul = `${CATEGORIES[key].short} – baris ${row.n}`;
+      else { res.problems.push('Nama kegiatan kosong'); res.fatal = true; }
+    }
+    if (res.fatal) return res;
+
+    let mulai = '';
+    let durasi = 0;
+    const jm = cleanTime(get('jamMulai'));
+    const js = cleanTime(get('jamSelesai'));
+    const du = get('durasi');
+    if (jm) {
+      const r = parseDuration(jm);
+      if (r && r.mulai) { mulai = r.mulai; durasi = r.durasi; } else if (!r) res.problems.push(`Jam "${jm}" tidak terbaca, ditampilkan sepanjang hari`);
+    } else if (dt.time) {
+      mulai = dt.time; durasi = 60;
+    }
+    if (mulai && js) {
+      const e = parseDuration(js);
+      if (e && e.mulai) {
+        const d = timeToMin(e.mulai) - timeToMin(mulai);
+        if (d > 0) durasi = d; else res.problems.push('Jam selesai lebih awal dari jam mulai');
+      } else res.problems.push(`Jam selesai "${js}" tidak terbaca`);
+    } else if (mulai && du && !/[-–]/.test(jm)) {
+      const d = parseDuration(du, mulai);
+      if (d && d.durasi) durasi = d.durasi; else res.problems.push(`Durasi "${du}" tidak terbaca`);
+    }
+
+    const amount = (f, label) => {
+      const raw = get(f);
+      const v = parseAmount(raw);
+      if (Number.isNaN(v)) { res.problems.push(`${label} "${raw}" tidak terbaca`); return null; }
+      return v;
+    };
+    const nominal = amount('nominal', 'Nominal');
+    const tx = extractTaxes(get('catatan'));
+    let { ppn, pph } = tx;
+    if (m.fields.ppn !== undefined && get('ppn')) { const v = amount('ppn', 'PPN'); if (v !== null) ppn = v; }
+    if (m.fields.pph !== undefined && get('pph')) { const v = amount('pph', 'PPh'); if (v !== null) pph = v; }
+    const pRaw = get('periode');
+    let periode = parsePeriod(pRaw);
+    if (periode === false) { res.problems.push(`Masa sewa "${pRaw}" tidak terbaca`); periode = null; }
+    const extra = m.extras.map((x) => ({ label: x.label, value: String(cells[x.idx] ?? '').trim() })).filter((x) => x.value);
+    const selesai = parseStatus(get('status'));
+
+    res.ev = normalizeEvent({
+      id: res.id, kategori: key, judul, tanggal: dt.date, mulai, durasi, nominal, ppn, pph, catatan: tx.rest, cabang, unit, tahap,
+      periodeMulai: periode ? periode.mulai : '', periodeSelesai: periode ? periode.selesai : '', extra, selesai,
+      selesaiPada: selesai ? (sys('selesaiPada') || null) : null, selesaiOleh: sys('selesaiOleh'),
+      dibuatOleh: sys('dibuatOleh'), dibuatPada: sys('dibuatPada'), diubahOleh: sys('diubahOleh'), diubahPada: sys('diubahPada'),
+      seriesId: sys('seriesId') || null, sumber: sys('sumber') || 'manual', dibuat: sys('dibuatPada') || '',
+    });
+    if (!res.ev) res.fatal = true;
+    return res;
+  }
+
+  // Event -> sel yang perlu ditulis (hanya kolom yang berubah bila "prev" ada)
+  function cellsFor(ev, prev, tab, template) {
+    const headers = (SYNC.tabs[tab] && SYNC.tabs[tab].headers) || TEMPLATE_HEADERS[template];
+    const m = mapHeaders(headers);
+    const H = (f) => (m.fields[f] === undefined ? null : headers[m.fields[f]]);
+    const changed = (keys) => !prev || keys.some((k) => JSON.stringify(prev[k] ?? null) !== JSON.stringify(ev[k] ?? null));
+    const out = {};
+    const put = (header, fallback, value) => {
+      const h = header || fallback;
+      const empty = value === '' || value === null || value === undefined;
+      if (!header && empty) return;     // jangan membuat kolom baru hanya untuk nilai kosong
+      out[h] = empty ? '' : value;
+    };
+
+    if (changed(['judul', 'cabang', 'unit', 'tahap'])) {
+      const auto = buildTitle(ev) || `${CATEGORIES[ev.kategori].short} – baris`;
+      const isAuto = ev.judul === auto || ev.judul.startsWith(`${CATEGORIES[ev.kategori].short} – baris `);
+      if (H('judul')) put(H('judul'), 'Nama_Kegiatan', isAuto && template === 'sewa' ? '' : ev.judul);
+      else if (!isAuto || (template !== 'sewa' && m.fields.cabang === undefined)) put(null, 'Nama_Kegiatan', ev.judul);
+      if (changed(['cabang'])) put(H('cabang'), 'Cabang', ev.cabang);
+      if (changed(['unit'])) put(H('unit'), 'Sub_Unit', ev.unit);
+      if (changed(['tahap'])) put(H('tahap'), 'Term_Tahap', ev.tahap);
+    }
+    if (changed(['tanggal'])) put(H('tanggal'), template === 'agenda' ? 'Tanggal' : 'Tanggal_Jatuh_Tempo', { d: ev.tanggal });
+    if (changed(['mulai', 'durasi'])) {
+      const end = ev.mulai ? minToTime(Math.min(timeToMin(ev.mulai) + ev.durasi, 1439)) : '';
+      const hm = H('jamMulai');
+      const hs = H('jamSelesai');
+      const hd = H('durasi');
+      if (hm && hs) { put(hm, '', ev.mulai); put(hs, '', end); if (hd) put(hd, '', ''); }
+      else if (hm && hd) { put(hm, '', ev.mulai); put(hd, '', ev.mulai ? ev.durasi : ''); }
+      else if (hm) put(hm, '', ev.mulai ? (ev.durasi === 60 ? ev.mulai : `${ev.mulai}-${end}`) : '');
+      else if (ev.mulai) { put(null, 'Jam_Mulai', ev.mulai); put(hs, 'Jam_Selesai', end); }
+    }
+    if (changed(['nominal'])) put(H('nominal'), 'Nominal_IDR', ev.nominal);
+    const taxCols = H('ppn') || H('pph');
+    if (taxCols || template !== 'sewa') {
+      if (changed(['ppn'])) put(H('ppn'), 'PPN', ev.ppn);
+      if (changed(['pph'])) put(H('pph'), 'PPh', ev.pph);
+      if (changed(['catatan'])) put(H('catatan'), 'Catatan', ev.catatan);
+    } else if (changed(['catatan', 'ppn', 'pph'])) {
+      // Tab sewa tanpa kolom PPN/PPh: pajak ditulis di Catatan, sama seperti format file sewa
+      const text = [ev.catatan, ev.ppn != null ? `PPN: ${ev.ppn}` : '', ev.pph != null ? `PPh: ${ev.pph}` : ''].filter(Boolean).join(' | ');
+      put(H('catatan'), 'Catatan', text);
+    }
+    if (changed(['periodeMulai', 'periodeSelesai'])) {
+      const text = ev.periodeMulai && ev.periodeSelesai ? `${dmy(ev.periodeMulai)} - ${dmy(ev.periodeSelesai)}` : '';
+      put(H('periode'), template === 'sewa' ? 'Durasi_Sewa' : 'Masa_Sewa', text);
+    }
+    if (changed(['selesai'])) put(H('status'), CATEGORIES[ev.kategori].payment ? 'Lunas' : 'Selesai', { b: Boolean(ev.selesai) });
+    if (changed(['extra'])) {
+      const labels = new Set([...(prev ? prev.extra : []), ...ev.extra].map((x) => x.label));
+      labels.forEach((label) => {
+        const now = ev.extra.find((x) => x.label === label);
+        const before = prev ? prev.extra.find((x) => x.label === label) : null;
+        if (prev && JSON.stringify(now || null) === JSON.stringify(before || null)) return;
+        const header = headers.find((h) => prettyHeader(h) === label) || null;
+        put(header, label, now ? now.value : '');
+      });
+    }
+    if (changed(['seriesId']) && ev.seriesId) out.Seri_ID = ev.seriesId;
+    if (changed(['sumber']) && ev.sumber && ev.sumber !== 'manual') out.Sumber = ev.sumber;
+    return out;
+  }
+
+  /* ---------- Komunikasi dengan Apps Script ---------- */
+  async function api(action, payload) {
+    const body = JSON.stringify({ action, session: SYNC.session, ...(payload || {}) });
+    let res;
+    try {
+      res = await fetch(SYNC.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body });
+    } catch (err) {
+      const e = new Error('Tidak tersambung ke Google Sheet. Periksa koneksi internet.');
+      e.code = 'network';
+      throw e;
+    }
+    let data = null;
+    try { data = await res.json(); } catch (err) { data = null; }
+    if (!data) {
+      const e = new Error('Respons Apps Script tidak valid. Pastikan URL Web App benar dan aksesnya "Anyone".');
+      e.code = 'server';
+      throw e;
+    }
+    if (!data.ok) {
+      const e = new Error(data.error || 'Permintaan ke Google Sheet gagal.');
+      e.code = data.code || 'server';
+      throw e;
+    }
+    return data;
+  }
+
+  function handleApiError(err, where) {
+    if (err.code === 'auth' || (err.code === 'forbidden' && where === 'load')) { logout(err.message); return; }
+    if (err.code === 'network') {
+      setSyncStatus('offline');
+      if (where === 'save') toast('Tidak tersambung ke Google Sheet, perubahan dibatalkan. Coba lagi saat koneksi kembali.', { timeout: 8000 });
+      return;
+    }
+    if (err.code === 'conflict') {
+      setSyncStatus('ok');
+      toast(err.message, { timeout: 8000 });
+      reloadNow();
+      return;
+    }
+    setSyncStatus(err.code === 'busy' || err.code === 'forbidden' ? 'ok' : 'error');
+    toast(err.message, { timeout: 8000 });
+  }
+
+  function setSyncStatus(status) {
+    SYNC.status = status;
+    if (!els.app) return;
+    els.app.dataset.sync = status;
+    const t = SYNC.lastSync ? `${pad2(SYNC.lastSync.getHours())}:${pad2(SYNC.lastSync.getMinutes())}` : '';
+    const text = {
+      idle: 'Belum tersambung', loading: 'Memuat…', saving: 'Menyimpan…', ok: t ? `Tersinkron ${t}` : 'Tersinkron',
+      offline: 'Offline', error: 'Gagal sinkron',
+    }[status] || '';
+    els.syncText.textContent = text;
+    const last = SYNC.history[0];
+    els.syncStatus.title = last ? `Perubahan terakhir: ${userLabel(last.email)} ${AKSI_LABEL[last.aksi] || last.aksi} ${last.judul || ''} (${fmtStamp(last.waktu)})` : text;
+  }
+
+  /* ---------- Menyimpan perubahan ---------- */
+  function queuePush() {
+    SYNC.dirty = true;
+    setSyncStatus('saving');
+    SYNC.chain = SYNC.chain.then(pushChanges).catch((err) => { console.error(err); });
+  }
+
+  function computeOps() {
+    const ops = [];
+    const snaps = new Map();
+    const seen = new Set();
+    state.events.forEach((ev) => {
+      seen.add(ev.id);
+      const prev = SYNC.map.get(ev.id);
+      const tab = tabNameFor(ev.kategori);
+      const template = templateFor(ev.kategori);
+      if (prev && prev.tab === tab && serializeEv(prev.ev) === serializeEv(ev)) return;
+      const full = !prev || prev.tab !== tab;
+      const cells = cellsFor(ev, full ? null : prev.ev, tab, template);
+      if (!full && !Object.keys(cells).length) { prev.ev = { ...prev.ev, ...cloneEv(ev) }; return; }
+      ops.push({ type: 'upsert', id: ev.id, tab, template, label: ev.judul, cells, expected: prev ? prev.rev : null });
+      snaps.set(ev.id, cloneEv(ev));
+    });
+    SYNC.map.forEach((prev, id) => {
+      if (!seen.has(id)) ops.push({ type: 'delete', id, tab: prev.tab, label: prev.ev.judul, expected: prev.rev });
+    });
+    return { ops, snaps };
+  }
+
+  async function pushChanges() {
+    if (!SYNC.session) { SYNC.dirty = false; return; }
+    const { ops, snaps } = computeOps();
+    if (!ops.length) { SYNC.dirty = false; setSyncStatus('ok'); return; }
+    SYNC.busy = true;
+    setSyncStatus('saving');
+    try {
+      const res = await api('save', { ops });
+      applySaveResult(res, snaps);
+      ops.filter((o) => o.type === 'delete').forEach((o) => SYNC.map.delete(o.id));
+      SYNC.dirty = computeOps().ops.length > 0;
+      SYNC.lastSync = new Date();
+      setSyncStatus(SYNC.dirty ? 'saving' : 'ok');
+      renderDetail();
+      renderReminders();
+      if (role() === 'Kontributor') render();
+      schedulePoll(1500);
+    } catch (err) {
+      revertToSynced();
+      render();
+      handleApiError(err, 'save');
+    } finally {
+      SYNC.busy = false;
+    }
+  }
+
+  function applySaveResult(res, snaps) {
+    Object.entries(res.tabs || {}).forEach(([name, headers]) => { SYNC.tabs[name] = { headers }; });
+    (res.rows || []).forEach((row) => {
+      const headers = (SYNC.tabs[row.tab] || {}).headers || [];
+      const r = rowToEvent(row.tab, keyForTab(row.tab), headers, row);
+      const base = snaps.get(row.id) || (r.ev ? cloneEv(r.ev) : null);
+      if (!base) return;
+      if (r.ev) STAMP_FIELDS.forEach((f) => { base[f] = r.ev[f]; });
+      SYNC.map.set(row.id, { ev: base, tab: row.tab, rev: row.rev, n: row.n });
+      const cur = getEvent(row.id);
+      if (cur && r.ev) STAMP_FIELDS.forEach((f) => { cur[f] = r.ev[f]; });
+    });
+    (res.deleted || []).forEach((id) => SYNC.map.delete(id));
+  }
+
+  function revertToSynced() {
+    const old = new Map(state.events.map((e) => [e.id, e]));
+    state.events = [...SYNC.map.values()].map((x) => {
+      const ev = cloneEv(x.ev);
+      const cur = old.get(ev.id);
+      return cur ? Object.assign(cur, ev) : ev;
+    });
+    SYNC.dirty = false;
+  }
+
+  /* ---------- Membaca data ---------- */
+  function applyServerData(data, fromCache) {
+    if (!fromCache && (SYNC.busy || SYNC.dirty)) { SYNC.hash = null; return false; }
+    if (data.me) SYNC.me = { ...(SYNC.me || {}), ...data.me };
+    SYNC.hash = data.hash || null;
+    SYNC.settings = data.settings || {};
+    SYNC.users = {};
+    (data.users || []).forEach((u) => { if (u.name) SYNC.users[u.email] = u.name; });
+    SYNC.history = data.history || [];
+    REMINDER_DAYS = clamp(Number(SYNC.settings.hari_pengingat) || 30, 1, 365);
+    applyCategories(data.categories || [], data.tabs || []);
+
+    SYNC.tabs = {};
+    const old = new Map(state.events.map((e) => [e.id, e]));
+    const list = [];
+    const notesList = [];
+    SYNC.map = new Map();
+    SYNC.invalid = [];
+    (data.tabs || []).forEach((t) => {
+      SYNC.tabs[t.name] = { headers: t.headers };
+      const key = keyForTab(t.name);
+      if (!hasCat(key)) return;
+      const m = mapHeaders(t.headers);
+      t.rows.forEach((row) => {
+        const r = rowToEvent(t.name, key, t.headers, row, m);
+        if (r.deleted) return;
+        const note = r.problems.join('; ');
+        if (r.id && note !== r.note) notesList.push({ tab: t.name, id: r.id, note });
+        if (r.fatal || !r.ev) { SYNC.invalid.push({ tab: t.name, n: row.n, note: note || 'ID kosong' }); return; }
+        const prev = old.get(r.ev.id);
+        const ev = prev ? Object.assign(prev, r.ev) : r.ev;
+        list.push(ev);
+        SYNC.map.set(ev.id, { ev: cloneEv(ev), tab: t.name, rev: row.rev, n: row.n });
+      });
+    });
+    state.events = list;
+    if (state.selectedId && !getEvent(state.selectedId)) state.selectedId = null;
+    if (!fromCache) {
+      storageSet(CACHE_KEY, JSON.stringify({ url: SYNC.url, data }));
+      if (isAdmin() && notesList.length) sendNotes(notesList);
+    }
+    applyRoleUI();
+    render();
+    return true;
+  }
+
+  function sendNotes(list) {
+    const key = JSON.stringify(list);
+    if (key === SYNC.notesSent) return;
+    SYNC.notesSent = key;
+    api('notes', { notes: list.slice(0, 300) }).catch(() => { SYNC.notesSent = ''; });
+  }
+
+  function pollInterval() { return clamp(Number(SYNC.settings.interval_sinkron_detik) || 20, 10, 300) * 1000; }
+
+  function schedulePoll(ms) {
+    clearTimeout(SYNC.timer);
+    if (SYNC.session) SYNC.timer = setTimeout(() => { pollNow(false); }, ms);
+  }
+
+  async function pollNow(force) {
+    clearTimeout(SYNC.timer);
+    if (!SYNC.session) return;
+    if (SYNC.polling || (!force && (document.hidden || SYNC.busy || SYNC.dirty))) { schedulePoll(pollInterval()); return; }
+    SYNC.polling = true;
+    if (force) setSyncStatus('loading');
+    try {
+      const data = await api('load', { hash: force ? null : SYNC.hash });
+      if (data.unchanged) {
+        if (data.me) { SYNC.me = { ...(SYNC.me || {}), ...data.me }; applyRoleUI(); }
+      } else {
+        applyServerData(data);
+      }
+      SYNC.lastSync = new Date();
+      setSyncStatus('ok');
+    } catch (err) {
+      handleApiError(err, 'load');
+    } finally {
+      SYNC.polling = false;
+      schedulePoll(pollInterval());
+    }
+  }
+
+  async function reloadNow() {
+    for (let i = 0; i < 50 && (SYNC.polling || SYNC.busy); i += 1) await new Promise((r) => setTimeout(r, 200));
+    await pollNow(true);
+  }
+
+  /* ---------- Login ---------- */
+  function loadGis() {
+    return new Promise((resolve, reject) => {
+      if (window.google && window.google.accounts && window.google.accounts.id) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Google Sign-In gagal dimuat'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function showLogin(message) {
+    els.loginScreen.hidden = false;
+    els.loginError.textContent = message || '';
+    els.loginStatus.textContent = '';
+    try {
+      await loadGis();
+      if (!SYNC.gisReady) {
+        window.google.accounts.id.initialize({ client_id: SYNC.clientId, callback: onGoogleCredential, auto_select: false, cancel_on_tap_outside: true });
+        SYNC.gisReady = true;
+      }
+      els.loginButton.innerHTML = '';
+      window.google.accounts.id.renderButton(els.loginButton, { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: 'id', width: 280 });
+    } catch (err) {
+      els.loginError.textContent = 'Tombol login Google gagal dimuat. Periksa koneksi internet lalu muat ulang halaman.';
+    }
+  }
+
+  async function onGoogleCredential(resp) {
+    els.loginError.textContent = '';
+    els.loginStatus.textContent = 'Memeriksa akses…';
+    try {
+      const r = await api('login', { idToken: resp && resp.credential });
+      SYNC.session = r.session;
+      SYNC.me = r.me;
+      storageSet(SESSION_KEY, JSON.stringify({ url: SYNC.url, session: r.session, me: r.me }));
+      els.loginScreen.hidden = true;
+      els.loginStatus.textContent = '';
+      applyRoleUI();
+      await firstLoad();
+    } catch (err) {
+      els.loginStatus.textContent = '';
+      els.loginError.textContent = err.message;
+    }
+  }
+
+  function logout(message) {
+    if (SYNC.session) api('logout', {}).catch(() => {});
+    clearTimeout(SYNC.timer);
+    SYNC.session = null;
+    SYNC.me = null;
+    SYNC.hash = null;
+    SYNC.map = new Map();
+    SYNC.history = [];
+    SYNC.invalid = [];
+    storageRemove(SESSION_KEY);
+    storageRemove(CACHE_KEY);
+    state.events = [];
+    state.selectedId = null;
+    if (window.google && window.google.accounts && window.google.accounts.id) window.google.accounts.id.disableAutoSelect();
+    setSyncStatus('idle');
+    applyRoleUI();
+    render();
+    showLogin(message || '');
+  }
+
+  async function firstLoad() {
+    setSyncStatus('loading');
+    try {
+      const data = await api('load', {});
+      SYNC.hash = null;
+      applyServerData(data);
+      SYNC.lastSync = new Date();
+      setSyncStatus('ok');
+      startupReminderToast();
+    } catch (err) {
+      handleApiError(err, 'load');
+    } finally {
+      schedulePoll(pollInterval());
+    }
+  }
+
+  function syncInit() {
+    migratable = computeMigratable();
+    let saved = null;
+    try { saved = JSON.parse(storageGet(SESSION_KEY) || 'null'); } catch (err) { saved = null; }
+    if (saved && saved.session && saved.url === SYNC.url) {
+      SYNC.session = saved.session;
+      SYNC.me = saved.me || null;
+      let cache = null;
+      try { cache = JSON.parse(storageGet(CACHE_KEY) || 'null'); } catch (err) { cache = null; }
+      if (cache && cache.url === SYNC.url && cache.data) applyServerData(cache.data, true);
+      applyRoleUI();
+      firstLoad();
+    } else {
+      setSyncStatus('idle');
+      showLogin('');
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && SYNC.session) pollNow(false); });
+    window.addEventListener('online', () => { if (SYNC.session) pollNow(true); });
+  }
+
+  /* ---------- Tampilan khusus mode sinkron ---------- */
+  function applyRoleUI() {
+    if (!els.app) return;
+    const sync = SYNC.on;
+    const logged = Boolean(SYNC.session);
+    els.app.classList.toggle('is-sync', sync);
+    els.btnCreate.hidden = !canCreate();
+    els.btnUpload.hidden = !canCreate();
+    els.btnAddCategory.hidden = !canCreate();
+    els.btnSample.hidden = sync;
+    els.btnClearSample.hidden = sync;
+    els.btnClear.hidden = sync;
+    els.btnMigrate.hidden = !(sync && logged && canCreate() && migratable.length > 0);
+    if (!els.btnMigrate.hidden) els.btnMigrate.textContent = `Kirim ${migratable.length} jadwal dari browser ini ke Sheet`;
+    els.syncStatus.hidden = !(sync && logged);
+    els.btnUser.hidden = !(sync && logged);
+    els.tabActivity.hidden = !sync;
+    if (SYNC.me) els.userInitial.textContent = initials(SYNC.me.name || SYNC.me.email);
+  }
+
+  function renderActivity() {
+    if (!SYNC.on || !els.panelActivity) return;
+    let html = '';
+    if (isAdmin() && SYNC.invalid.length) {
+      html += '<div class="sync-warn">'
+        + `<strong>${SYNC.invalid.length} baris di Google Sheet belum tampil</strong>`
+        + '<span>Perbaiki isiannya; keterangan juga tertulis di kolom Catatan_Sistem.</span>'
+        + `<ul>${SYNC.invalid.slice(0, 8).map((x) => `<li>${escapeHTML(x.tab)}, baris ${x.n}: ${escapeHTML(x.note)}</li>`).join('')}</ul></div>`;
+    }
+    if (!SYNC.history.length) {
+      html += '<div class="empty"><p>Belum ada aktivitas.</p></div>';
+    } else {
+      html += `<ul class="act-list">${SYNC.history.map((h) => {
+        const who = escapeHTML(userLabel(h.email) || 'Sistem');
+        const what = escapeHTML(AKSI_LABEL[h.aksi] || h.aksi);
+        const target = escapeHTML(h.judul || h.tab || '');
+        const meta = [fmtStamp(h.waktu), h.tab && h.judul !== h.tab ? escapeHTML(h.tab) : ''].filter(Boolean).join(', ');
+        const inner = `<span class="act__text"><strong>${who}</strong> ${what} <strong>${target}</strong></span>`
+          + (h.perubahan ? `<span class="act__detail">${escapeHTML(h.perubahan)}</span>` : '')
+          + `<span class="act__time">${meta}</span>`;
+        return h.id && getEvent(h.id)
+          ? `<li class="act"><button type="button" class="act__body" data-action="reveal" data-id="${escapeHTML(h.id)}">${inner}</button></li>`
+          : `<li class="act"><div class="act__body">${inner}</div></li>`;
+      }).join('')}</ul>`;
+    }
+    els.panelActivity.innerHTML = html;
+  }
+
+  function toggleUserPopover() {
+    if (!els.userPopover.hidden) { closePopovers(); return; }
+    const me = SYNC.me || {};
+    const t = SYNC.lastSync ? `${pad2(SYNC.lastSync.getHours())}:${pad2(SYNC.lastSync.getMinutes())}` : '-';
+    els.userPopover.innerHTML = '<div class="up__head">'
+      + `<span class="up__avatar">${escapeHTML(initials(me.name || me.email))}</span>`
+      + `<div class="up__who"><strong>${escapeHTML(me.name || me.email || '')}</strong><span>${escapeHTML(me.email || '')}</span></div></div>`
+      + `<p class="up__row">Peran: <strong>${escapeHTML(me.role || '-')}</strong></p>`
+      + `<p class="up__row">Sinkron terakhir: <strong>${t}</strong></p>`
+      + '<div class="up__actions">'
+      + '<button type="button" class="btn btn--tonal btn--block" data-action="sync-now">Muat ulang data</button>'
+      + (me.sheetUrl ? `<a class="btn btn--outline btn--block" href="${escapeHTML(me.sheetUrl)}" target="_blank" rel="noopener">Buka Google Sheet</a>` : '')
+      + '<button type="button" class="btn btn--text btn--block" data-action="logout">Keluar</button></div>';
+    showPopover(els.userPopover, els.btnUser.hidden ? els.syncStatus : els.btnUser);
+  }
+
+  /* ---------- Kategori dari kalender ---------- */
+  async function saveCategorySync(label, color, payment) {
+    if (/[[\]*?/\\:]/.test(label) || label.startsWith('_')) {
+      els.cError.textContent = 'Nama kategori tidak boleh diawali _ atau berisi : \\ / ? * [ ]';
+      return;
+    }
+    const editing = editingCategory;
+    const payload = editing
+      ? { op: 'update', tab: tabNameFor(editing), name: label, jenis: payment ? 'pembayaran' : 'agenda', warna: color }
+      : { op: 'create', name: label, jenis: payment ? 'pembayaran' : 'agenda', warna: color };
+    els.cSave.disabled = true;
+    els.cError.textContent = '';
+    try {
+      await api('category', payload);
+    } catch (err) {
+      els.cError.textContent = err.message;
+      if (err.code === 'auth') logout(err.message);
+      return;
+    } finally {
+      els.cSave.disabled = false;
+    }
+    els.categoryModal.close();
+    const cb = categoryCallback;
+    categoryCallback = null;
+    await reloadNow();
+    const key = keyForTab(label);
+    if (editing && editing !== key && state.filters[editing] === false) { state.filters[key] = false; delete state.filters[editing]; }
+    if (cb && hasCat(key)) cb(key);
+    toast(editing ? 'Kategori diperbarui' : `Kategori "${label}" ditambahkan sebagai tab baru di Google Sheet`);
+  }
+
+  async function hideCategorySync(cat) {
+    const choice = await askConfirm({
+      title: `Sembunyikan kategori "${cat.label}"?`,
+      message: 'Kategori dan jadwalnya disembunyikan dari kalender untuk semua pengguna. Tab dan datanya tetap ada di Google Sheet; tampilkan lagi lewat tab _Kategori (Tampilkan = TRUE).',
+      buttons: [{ label: 'Batal', value: null }, { label: 'Sembunyikan', value: 'hide', variant: 'danger' }],
+    });
+    if (choice !== 'hide') return;
+    try {
+      await api('category', { op: 'hide', tab: cat.tab || cat.label });
+    } catch (err) {
+      handleApiError(err, 'save');
+      return;
+    }
+    await reloadNow();
+    toast('Kategori disembunyikan.');
+  }
+
+  /* ---------- Memindahkan data lama di browser ke Google Sheet ---------- */
+  function computeMigratable() {
+    if (storageGet(MIGRATED_KEY) === '1') return [];
+    let raw = [];
+    try { raw = JSON.parse(storageGet(STORAGE_KEY) || '[]'); } catch (err) { raw = []; }
+    if (!Array.isArray(raw)) return [];
+    const list = raw.filter((x) => x && typeof x === 'object' && x.tanggal && x.judul);
+    const samples = new Set(findSampleEvents(list.map((x) => ({ ...x, sumber: x.sumber || 'manual' }))).map((x) => x.id));
+    return list.filter((x) => !samples.has(x.id) && x.sumber !== 'contoh');
+  }
+
+  async function migrateLocal() {
+    if (!migratable.length) { toast('Tidak ada jadwal di browser ini yang perlu dikirim.'); return; }
+    let localCats = [];
+    try { localCats = JSON.parse(storageGet(CATEGORIES_KEY) || '[]'); } catch (err) { localCats = []; }
+    const catByKey = {};
+    (Array.isArray(localCats) ? localCats : []).forEach((c) => { if (c && c.key) catByKey[c.key] = c; });
+    const missing = new Map();
+    migratable.forEach((x) => {
+      if (BUILTIN_CATEGORIES[x.kategori]) return;
+      const c = catByKey[x.kategori];
+      if (c && !findCategoryByLabel(c.label)) missing.set(normalizeText(c.label), c);
+    });
+    const ok = await askConfirm({
+      title: 'Kirim jadwal dari browser ini ke Google Sheet?',
+      message: `${migratable.length} jadwal yang tersimpan di browser ini akan ditambahkan ke Google Sheet${missing.size ? ` beserta ${missing.size} kategori baru` : ''}. Jadwal yang sama persis tidak akan digandakan.`,
+      buttons: [{ label: 'Batal', value: null }, { label: 'Kirim', value: 'go', variant: 'primary' }],
+    });
+    if (ok !== 'go') return;
+    try {
+      for (const c of missing.values()) {
+        await api('category', { op: 'create', name: c.label, jenis: c.payment ? 'pembayaran' : 'agenda', warna: c.color || 'slate' });
+      }
+      if (missing.size) await reloadNow();
+    } catch (err) {
+      handleApiError(err, 'save');
+      return;
+    }
+    const keys = new Set(state.events.map(dupKey));
+    const add = [];
+    migratable.forEach((x) => {
+      let k = x.kategori;
+      if (!BUILTIN_CATEGORIES[k]) { const c = catByKey[k]; k = c ? findCategoryByLabel(c.label) : null; }
+      if (!k || !hasCat(k)) return;
+      const ev = normalizeEvent({ ...x, kategori: k, id: uid(), dibuatOleh: currentEmail(), sumber: x.sumber === 'csv' ? 'csv' : 'manual' });
+      if (!ev || keys.has(dupKey(ev))) return;
+      keys.add(dupKey(ev));
+      add.push(ev);
+    });
+    const finish = (msg) => { storageSet(MIGRATED_KEY, '1'); migratable = []; applyRoleUI(); toast(msg); };
+    if (!add.length) { finish('Semua jadwal di browser ini sudah ada di Google Sheet.'); return; }
+    state.events.push(...add);
+    saveEvents();
+    render();
+    await SYNC.chain;
+    if (add.every((ev) => SYNC.map.has(ev.id))) finish(`${add.length} jadwal dikirim ke Google Sheet.`);
+  }
+
+  /* -----------------------------------------------------------
+     14. INISIALISASI
      ----------------------------------------------------------- */
   function cacheEls() {
     [
@@ -2719,7 +3573,9 @@
       'fAllDay', 'timeRow', 'fMulai', 'fAkhir', 'durHint', 'fNominal', 'fCatatan', 'repeatRow', 'fUlangi',
       'jumlahWrap', 'fJumlah', 'fStatus', 'fStatusLabel', 'formError', 'importModal', 'importFileName',
       'importStats', 'importBody', 'btnDoImport', 'confirmModal', 'confirmTitle', 'confirmMsg', 'confirmActions',
-      'periodPicker', 'dayPopover', 'toasts', 'sewaFields', 'taxRow', 'fCabang', 'fUnit', 'fTahap', 'fPeriodeMulai',
+      'periodPicker', 'dayPopover', 'toasts', 'userPopover', 'syncStatus', 'syncText', 'btnUser', 'userInitial',
+      'loginScreen', 'loginButton', 'loginStatus', 'loginError', 'tabActivity', 'panelActivity', 'btnAddCategory',
+      'btnMigrate', 'cSave', 'sewaFields', 'taxRow', 'fCabang', 'fUnit', 'fTahap', 'fPeriodeMulai',
       'fPeriodeSelesai', 'fPPN', 'fPPh', 'cabangList', 'importColumns', 'importKategori', 'importKategoriHint',
       'importSimilarWrap', 'importSimilar', 'importSimilarLabel', 'importPastWrap', 'importPast', 'importPastLabel',
       'importModeWrap', 'importModeHint', 'importSamplesWrap', 'importSamples', 'importSamplesLabel', 'btnClearSample',
@@ -2730,26 +3586,34 @@
   function init() {
     cacheEls();
     if (isMobile()) state.leftOpen = false;
-    loadCategories();
+    if (!SYNC.on) loadCategories();
     renderCategoryStyles();
     loadPrefs();
 
-    const stored = loadEvents();
-    const firstVisit = stored === null;
-    state.events = firstVisit ? sampleEvents() : stored;
-    if (firstVisit) saveEvents();
+    let firstVisit = false;
+    if (SYNC.on) {
+      state.events = [];
+    } else {
+      const stored = loadEvents();
+      firstVisit = stored === null;
+      state.events = firstVisit ? sampleEvents() : stored;
+      if (firstVisit) saveEvents();
+    }
 
     syncMini();
     buildCategoryOptions();
     bindEvents();
     setFavicon();
+    applyRoleUI();
     render();
 
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => { if (state.view === 'month') fillMonthCells(buildIndex()); });
     }
 
-    if (firstVisit) {
+    if (SYNC.on) {
+      syncInit();
+    } else if (firstVisit) {
       toast('Data contoh sudah dimuat supaya kalender langsung bisa dicoba. Hapus lewat "Hapus semua data" kapan saja.', { timeout: 9000 });
     } else {
       startupReminderToast();
@@ -2763,6 +3627,8 @@
   window.CalendarApp = {
     parseCSV, parseDateTime, parseDuration, parseAmount, parsePeriod, extractTaxes, mapCategory,
     importCSVText: prepareImport, exportCSV, downloadTemplate,
+    syncNow: () => reloadNow(),
+    get sync() { return { on: SYNC.on, me: SYNC.me, status: SYNC.status, invalid: SYNC.invalid.slice() }; },
     get events() { return state.events.slice(); },
   };
 
