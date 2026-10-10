@@ -109,13 +109,25 @@
           </label>
         </section>
 
+        <section aria-labelledby="branchTitle" id="branchSection">
+          <h2 class="side-title" id="branchTitle">Cabang</h2>
+          <label class="branch-filter">
+            <span class="sr-only">Tampilkan jadwal cabang</span>
+            <select id="branchFilter"></select>
+          </label>
+          <button type="button" class="link-btn link-btn--add" id="btnManageBranch" data-action="manage-branches">Kelola cabang</button>
+        </section>
+
         <section class="summary" id="monthSummary" aria-live="polite"></section>
+
+        <section class="summary funds" id="fundsSummary" aria-live="polite"></section>
 
         <section aria-labelledby="dataTitle">
           <h2 class="side-title" id="dataTitle">Kelola data</h2>
           <div class="data-actions">
             <button type="button" class="link-btn" id="btnTemplate">Unduh template CSV</button>
             <button type="button" class="link-btn" id="btnExport">Ekspor semua ke CSV</button>
+            <button type="button" class="link-btn" id="btnSettings" data-action="open-settings">Pengaturan pengingat</button>
             <button type="button" class="link-btn link-btn--add" id="btnMigrate" hidden>Kirim jadwal dari browser ini ke Sheet</button>
             <button type="button" class="link-btn" id="btnSample">Muat data contoh</button>
             <button type="button" class="link-btn" id="btnClearSample">Hapus data contoh</button>
@@ -205,7 +217,8 @@
           <div class="field-row">
             <label class="field">
               <span>Cabang</span>
-              <input type="text" id="fCabang" list="cabangList" placeholder="Mis. Pemuda" autocomplete="off" />
+              <select id="fCabang"></select>
+              <span class="field-hint" id="fCabangHint" hidden>Cabang belum ada? Admin dapat menambahkannya lewat Kelola cabang.</span>
             </label>
             <label class="field">
               <span>Sub unit</span>
@@ -226,7 +239,6 @@
               <input type="date" id="fPeriodeSelesai" />
             </label>
           </div>
-          <datalist id="cabangList"></datalist>
         </div>
 
         <label class="field">
@@ -391,6 +403,189 @@
         <span class="spacer"></span>
         <button type="button" class="btn btn--text" data-close>Batal</button>
         <button type="submit" class="btn btn--primary" id="cSave">Simpan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ===================== MODAL: KELOLA CABANG ===================== -->
+  <dialog class="modal" id="branchModal" aria-labelledby="branchModalTitle">
+    <div class="modal__card">
+      <header class="modal__head">
+        <h2 id="branchModalTitle">Kelola cabang</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Tutup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="modal__intro">Daftar ini dipakai di isian Cabang pada form Create dan filter cabang. Cabang baru dari Upload CSV atau dari Google Sheet otomatis ikut masuk daftar.</p>
+        <form class="branch-add" id="branchAddForm" novalidate>
+          <label class="field">
+            <span>Nama cabang baru</span>
+            <input type="text" id="bName" maxlength="60" placeholder="Mis. Sunter" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Entitas / PT (opsional)</span>
+            <input type="text" id="bEntitas" maxlength="60" placeholder="Mis. PT WMC" list="entitasList" autocomplete="off" />
+          </label>
+          <button type="submit" class="btn btn--primary">Tambah</button>
+        </form>
+        <datalist id="entitasList"></datalist>
+        <p class="form-error" id="bError" role="alert"></p>
+        <div class="branch-toolbar">
+          <span id="branchCount"></span>
+          <label class="check check--sm" id="bShowInactiveWrap">
+            <input type="checkbox" class="chk" id="bShowInactive" />
+            <span>Tampilkan yang nonaktif</span>
+          </label>
+        </div>
+        <ul class="branch-list" id="branchList"></ul>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--text" data-close>Tutup</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- ===================== MODAL: CATAT PEMBAYARAN & BUKTI ===================== -->
+  <dialog class="modal modal--small" id="payModal" aria-labelledby="payModalTitle">
+    <form class="modal__card" id="payForm" novalidate>
+      <header class="modal__head">
+        <h2 id="payModalTitle">Catat pembayaran</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Tutup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <div class="pay-for" id="payFor"></div>
+        <label class="field">
+          <span>Tanggal bayar</span>
+          <input type="date" id="pTanggal" />
+        </label>
+        <div class="field" id="pFileWrap">
+          <span>File bukti (PDF, JPG, PNG; maks. 10 MB)</span>
+          <input type="file" id="pFile" class="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,application/pdf,image/jpeg,image/png,image/webp" />
+          <span class="field-hint">File disimpan di folder "Bukti Bayar Kalender" di Google Drive Admin, hanya bisa dibuka pengguna kalender.</span>
+        </div>
+        <p class="pay-current" id="pCurrent" hidden></p>
+        <label class="field">
+          <span id="pLinkLabel">Atau tempel link bukti</span>
+          <input type="url" id="pLink" placeholder="https://drive.google.com/…" autocomplete="off" />
+        </label>
+        <p class="field-hint" id="pLocalNote" hidden>Unggah file langsung tersedia di mode Google Sheet. Di mode ini, simpan file bukti di Google Drive lalu tempel link-nya.</p>
+        <label class="field">
+          <span>Keterangan pembayaran</span>
+          <textarea id="pKet" rows="2" maxlength="300" placeholder="No. referensi transfer, bank, nama penerima"></textarea>
+        </label>
+        <label class="check">
+          <input type="checkbox" class="chk chk--lg" id="pLunas" />
+          <span>Tandai lunas</span>
+        </label>
+        <p class="form-error" id="pError" role="alert"></p>
+      </div>
+      <footer class="modal__foot modal__foot--split">
+        <button type="button" class="btn btn--danger-text" id="pClear" hidden>Hapus catatan</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn--text" data-close>Batal</button>
+        <button type="submit" class="btn btn--primary" id="pSave">Simpan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ===================== MODAL: REKAP KEBUTUHAN DANA ===================== -->
+  <dialog class="modal modal--wide" id="fundsModal" aria-labelledby="fundsTitle">
+    <div class="modal__card">
+      <header class="modal__head">
+        <h2 id="fundsTitle">Rekap kebutuhan dana</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Tutup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="import-meta" id="fundsNote"></p>
+        <div class="kpis" id="fundsKpis"></div>
+        <h3 class="funds-h">Per bulan, 12 bulan ke depan</h3>
+        <div class="table-wrap table-wrap--auto">
+          <table class="import-table funds-table">
+            <thead>
+              <tr>
+                <th scope="col">Bulan</th>
+                <th scope="col" class="num">Tagihan</th>
+                <th scope="col" class="num">Total</th>
+                <th scope="col" class="num">Sudah lunas</th>
+                <th scope="col" class="num">Belum lunas</th>
+              </tr>
+            </thead>
+            <tbody id="fundsMonths"></tbody>
+          </table>
+        </div>
+        <h3 class="funds-h">Per cabang, belum lunas s.d. 12 bulan ke depan</h3>
+        <div class="table-wrap table-wrap--auto">
+          <table class="import-table funds-table">
+            <thead>
+              <tr>
+                <th scope="col">Cabang</th>
+                <th scope="col">Entitas</th>
+                <th scope="col" class="num">Tagihan</th>
+                <th scope="col" class="num">Belum lunas</th>
+                <th scope="col">Jatuh tempo terdekat</th>
+              </tr>
+            </thead>
+            <tbody id="fundsBranches"></tbody>
+          </table>
+        </div>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--outline" id="btnFundsCSV">Unduh CSV</button>
+        <button type="button" class="btn btn--text" data-close>Tutup</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- ===================== MODAL: PENGATURAN PENGINGAT ===================== -->
+  <dialog class="modal modal--small" id="settingsModal" aria-labelledby="settingsTitle">
+    <form class="modal__card" id="settingsForm" novalidate>
+      <header class="modal__head">
+        <h2 id="settingsTitle">Pengaturan pengingat</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Tutup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <div class="field-row">
+          <label class="field">
+            <span>Pengingat mulai (semua jadwal)</span>
+            <select id="sDays"></select>
+          </label>
+          <label class="field">
+            <span>Pengingat awal sewa kantor</span>
+            <select id="sSewaDays"></select>
+          </label>
+        </div>
+        <p class="field-hint">Jadwal masuk panel lonceng sejak hari yang dipilih. Sewa diingatkan lebih awal karena perpanjangan biasanya perlu negosiasi.</p>
+        <div class="settings-email" id="sEmailWrap">
+          <label class="check">
+            <input type="checkbox" class="chk chk--lg" id="sEmailOn" />
+            <span>Kirim email ringkasan pengingat setiap hari</span>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Penerima (pisahkan dengan koma)</span>
+              <input type="text" id="sEmailTo" autocomplete="off" />
+            </label>
+            <label class="field field--narrow">
+              <span>Jam kirim</span>
+              <select id="sEmailHour"></select>
+            </label>
+          </div>
+          <p class="field-hint">Isi email: jadwal yang terlambat, jatuh tempo hari ini, 7 hari ke depan, serta pengingat awal H-30 dan H-14 (sewa juga H-60 dan H-90). Email tidak dikirim pada hari yang tidak punya jadwal untuk diingatkan.</p>
+          <div><button type="button" class="btn btn--tonal" id="sTest">Kirim email uji ke saya</button></div>
+        </div>
+        <p class="field-hint" id="sLocalNote" hidden>Email pengingat harian tersedia di mode Google Sheet.</p>
+        <p class="form-error" id="sError" role="alert"></p>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--text" data-close>Batal</button>
+        <button type="submit" class="btn btn--primary" id="sSave">Simpan</button>
       </footer>
     </form>
   </dialog>

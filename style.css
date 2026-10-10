@@ -961,6 +961,137 @@ button.act__body:hover { background: var(--hover); }
 .act__detail { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .act__time { font-size: 11.5px; color: var(--faint); }
 
+/* ---------- 18b. Cabang, bukti bayar, rekap dana, pengaturan ---------- */
+.btn--sm { height: 30px; padding: 0 12px; font-size: 13px; }
+.field-hint { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.field > .field-hint { font-weight: 400; }
+.modal__intro { font-size: 13px; color: var(--muted); }
+.modal.is-busy .modal__card { cursor: progress; }
+
+/* Filter cabang di sidebar */
+.branch-filter { display: block; padding: 0 2px; }
+.branch-filter select {
+  width: 100%; height: 36px; padding: 0 10px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); font-size: 13.5px;
+  outline: none; cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.branch-filter select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.branch-filter select.is-active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-ink); font-weight: 600; }
+.branch-filter select:disabled { cursor: default; color: var(--faint); }
+#branchSection .link-btn--add { margin-top: 4px; }
+.summary__scope {
+  display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary-ink);
+  font-size: 11px; font-weight: 700; vertical-align: 1px;
+}
+
+/* Kartu kebutuhan dana */
+.funds__head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.funds__head .summary__title { margin-bottom: 0; }
+.mini-seg { display: flex; flex-shrink: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 999px; }
+.mini-seg button { height: 24px; padding: 0 7px; font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.mini-seg button + button { border-left: 1px solid var(--line-strong); }
+.mini-seg button:hover { background: #F1F3F8; color: var(--text); }
+.mini-seg button.is-active { background: var(--primary-soft); color: var(--primary-ink); }
+.funds .sum-row .cat-dot { margin-right: 6px; }
+.sum-row--late, .sum-row--late strong { color: var(--late); }
+.funds__note { margin-top: 6px; font-size: 11.5px; color: var(--faint); }
+.funds__more { margin-top: 8px; padding-left: 0; padding-right: 0; }
+.funds__more:hover { padding-left: 8px; }
+
+/* Daftar cabang */
+.branch-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.branch-add .btn { height: 40px; }
+.branch-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.check--sm { height: auto; font-size: 12.5px; color: var(--muted); }
+.branch-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.branch-row {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.branch-row.is-inactive .branch-row__main { opacity: 0.6; }
+.branch-row__ico { color: var(--muted); }
+.branch-row__ico svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.branch-row__main { display: flex; flex-direction: column; min-width: 0; }
+.branch-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.branch-row__meta { font-size: 12px; color: var(--muted); }
+.branch-row__actions { display: flex; align-items: center; gap: 2px; }
+.branch-row.is-editing { display: block; background: var(--surface); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.branch-edit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.branch-edit__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
+.branch-edit__hint { grid-column: 1 / -1; font-size: 12px; color: var(--today); }
+.branch-empty { padding: 24px 12px; text-align: center; color: var(--muted); }
+
+/* Bukti pembayaran */
+.pay-for {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.pay-for span { font-size: 12.5px; color: var(--muted); }
+.pay-current { font-size: 12.5px; color: var(--muted); }
+.field .file-input {
+  width: 100%; height: auto; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 10px;
+  background: var(--surface-2); font-size: 13px; cursor: pointer;
+}
+.field .file-input:hover { border-color: var(--primary); }
+.file-input::file-selector-button {
+  margin-right: 10px; padding: 6px 12px; border: 0; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary-ink); font: inherit; font-weight: 600; cursor: pointer;
+}
+.proof-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--primary); font-weight: 600; text-decoration: none;
+}
+.proof-link:hover { text-decoration: underline; }
+.proof-link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.proof-note { flex-basis: 100%; }
+
+/* Rekap dana (modal) */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.kpi {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: 12px 14px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.kpi__label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.kpi__value { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi__sub { font-size: 12px; color: var(--muted); }
+.kpi--late { background: var(--late-bg); border-color: #F5CFCA; }
+.kpi--late .kpi__label, .kpi--late .kpi__value, .kpi--late .kpi__sub { color: var(--late); }
+.funds-h { margin-top: 4px; font-size: 14px; font-weight: 700; }
+.table-wrap--auto { max-height: none; }
+.funds-table tr.is-peak td { background: var(--soon-bg); }
+.funds-table tr.is-late td { color: var(--late); }
+.funds-table tr.is-total td { border-top: 1px solid var(--line); background: var(--surface-2); font-weight: 700; }
+.link-cell { font-weight: 600; color: var(--primary); text-align: left; }
+.link-cell:hover { text-decoration: underline; }
+.row-badge--peak { background: var(--today-bg); color: var(--today); }
+.stat--branch { background: var(--primary-soft); color: var(--primary-ink); }
+
+/* Pengaturan */
+.settings-email {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.settings-email .check { height: auto; }
+.field select:disabled, .field input:disabled { background: var(--surface-2); color: var(--faint); cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .branch-add { grid-template-columns: 1fr; }
+  .branch-row { grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .branch-row .status-pill { display: none; }
+  .branch-edit { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi { padding: 10px 12px; }
+  .kpi__value { font-size: 14.5px; white-space: nowrap; overflow-wrap: normal; }
+}
+
 /* ---------- 18. Overlay seret file CSV ---------- */
 body.is-file-drag::after {
   content: "Lepaskan file CSV untuk mengimpor";

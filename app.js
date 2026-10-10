@@ -16,10 +16,13 @@
   const STORAGE_KEY = 'calendar.events.v1';
   const PREFS_KEY = 'calendar.prefs.v1';
   const NOTIFIED_KEY = 'calendar.notified.v1';
+  const BRANCHES_KEY = 'calendar.branches.v1';
 
   const WEEK_START = 1;            // 0 = Minggu, 1 = Senin
   const HOUR_PX = 48;              // tinggi 1 jam di tampilan Week/Day
   let REMINDER_DAYS = 30;          // pengingat aktif dari H-30 sampai Hari-H (bisa diatur dari Google Sheet)
+  let SEWA_REMINDER_DAYS = 90;     // pengingat awal khusus Pembayaran Sewa Kantor (H-90)
+  const PROOF_MAX_MB = 10;         // ukuran maksimal file bukti bayar
   const URGENT_DAYS = 7;           // dihitung di badge lonceng
   const NOTIFY_MILESTONES = [30, 14, 7, 3, 1, 0];
   const CHIP_H = 22;
@@ -93,12 +96,16 @@
     pph: ['pph', 'pph_idr', 'pph_4_2', 'pph42', 'pph_23', 'pph23'],
     catatan: ['catatan', 'keterangan', 'notes', 'note', 'deskripsi', 'memo'],
     status: ['status', 'status_bayar'],
+    tglBayar: ['tgl_bayar', 'tanggal_dibayar', 'tgl_dibayar', 'paid_date', 'tanggal_pembayaran'],
+    bukti: ['bukti_bayar', 'bukti', 'link_bukti', 'bukti_pembayaran', 'link_bayar'],
+    ketBayar: ['keterangan_bayar', 'ket_bayar', 'catatan_bayar'],
   };
   const COL_LABELS = {
     no: 'No', kategori: 'Kategori', judul: 'Judul', tanggal: 'Jatuh tempo', nominal: 'Nominal', periode: 'Masa sewa',
     waktu: 'Waktu', cabang: 'Cabang', unit: 'Sub unit', tahap: 'Tahap', ppn: 'PPN', pph: 'PPh', catatan: 'Catatan', status: 'Status',
+    tglBayar: 'Tanggal bayar', bukti: 'Bukti bayar', ketBayar: 'Keterangan bayar',
   };
-  const EXPORT_HEADER = ['No', 'Kategori', 'Judul', 'Cabang', 'Sub_Unit', 'Term_Tahap', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'PPN', 'PPh', 'Masa_Sewa', 'Waktu', 'Catatan', 'Status'];
+  const EXPORT_HEADER = ['No', 'Kategori', 'Judul', 'Cabang', 'Sub_Unit', 'Term_Tahap', 'Tanggal_Jatuh_Tempo', 'Nominal_IDR', 'PPN', 'PPh', 'Masa_Sewa', 'Waktu', 'Catatan', 'Status', 'Tgl_Bayar', 'Bukti_Bayar', 'Keterangan_Bayar'];
 
   const ICON = {
     chevL: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
@@ -116,6 +123,9 @@
     user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
     repeat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+    receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+    clip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5l-8.3 8.3a5 5 0 0 1-7-7l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.6-7.6"/></svg>',
+    building: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5l8-2v18"/><path d="M12 9h8v12"/><path d="M7.5 8h1M7.5 12h1M7.5 16h1M15.5 13h1M15.5 17h1M2.5 21h19"/></svg>',
   };
 
   /* -----------------------------------------------------------
@@ -136,6 +146,8 @@
     pickerYear: new Date().getFullYear(),
     pendingImport: null,
     forceScroll: false,
+    branch: '',                       // filter cabang ('' = semua cabang)
+    fundsDays: 90,                    // rentang rekap kebutuhan dana: 30 / 90 / 365 hari
   };
 
   const els = {};
@@ -243,6 +255,9 @@
   function sel(id) { return CSS.escape(String(id)); }
 
   function filterOn(k) { return state.filters[k] !== false; }
+  function branchOn(ev) { return !state.branch || branchKey(ev.cabang) === branchKey(state.branch); }
+  // Filter kategori + filter cabang (dipakai kalender, pengingat, ringkasan, dan rekap)
+  function passes(ev) { return filterOn(ev.kategori) && branchOn(ev); }
 
   /* -----------------------------------------------------------
      3b. KATEGORI TAMBAHAN
@@ -361,6 +376,79 @@
   }
 
   /* -----------------------------------------------------------
+     3c. DAFTAR CABANG
+     Mode lokal: tersimpan di browser. Mode Google Sheet: tab _Cabang.
+     ----------------------------------------------------------- */
+  let BRANCHES = [];   // { nama, entitas, aktif, keterangan }
+
+  function branchKey(n) { return normalizeText(n); }
+  function cleanBranchName(n) { return String(n ?? '').trim().replace(/\s+/g, ' ').slice(0, 60); }
+  function findBranch(n) {
+    const k = branchKey(n);
+    return k ? BRANCHES.find((b) => branchKey(b.nama) === k) || null : null;
+  }
+  function canManageBranches() { return isAdmin(); }
+
+  function setBranches(list) {
+    BRANCHES = (Array.isArray(list) ? list : [])
+      .map((b) => ({
+        nama: cleanBranchName(b && b.nama),
+        entitas: cleanText(b && b.entitas, 60),
+        aktif: !(b && b.aktif === false),
+        keterangan: cleanText(b && b.keterangan, 200),
+      }))
+      .filter((b, i, arr) => b.nama && arr.findIndex((x) => branchKey(x.nama) === branchKey(b.nama)) === i);
+  }
+
+  // Daftar resmi + cabang yang dipakai jadwal tetapi belum terdaftar
+  function allBranches() {
+    const out = BRANCHES.map((b) => ({ ...b, terdaftar: true }));
+    const seen = new Set(out.map((b) => branchKey(b.nama)));
+    state.events.forEach((ev) => {
+      const k = branchKey(ev.cabang);
+      if (!k || seen.has(k)) return;
+      seen.add(k);
+      out.push({ nama: ev.cabang, entitas: '', aktif: true, keterangan: '', terdaftar: false });
+    });
+    return out.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+  }
+
+  function branchUsage() {
+    const count = new Map();
+    state.events.forEach((ev) => {
+      const k = branchKey(ev.cabang);
+      if (k) count.set(k, (count.get(k) || 0) + 1);
+    });
+    return count;
+  }
+
+  function loadBranchesLocal() {
+    let arr = null;
+    try { arr = JSON.parse(storageGet(BRANCHES_KEY) || 'null'); } catch (err) { arr = null; }
+    setBranches(arr || []);
+    if (arr === null) registerUsedBranchesLocal(true);
+  }
+
+  function saveBranchesLocal() {
+    if (SYNC.on) return;
+    storageSet(BRANCHES_KEY, JSON.stringify(BRANCHES));
+  }
+
+  // Mode lokal: cabang baru dari Create / CSV otomatis masuk daftar (mode Sheet ditangani Apps Script)
+  function registerUsedBranchesLocal(force) {
+    if (SYNC.on) return false;
+    let added = false;
+    state.events.forEach((ev) => {
+      const nama = cleanBranchName(ev.cabang);
+      if (!nama || findBranch(nama)) return;
+      BRANCHES.push({ nama, entitas: '', aktif: true, keterangan: '' });
+      added = true;
+    });
+    if (added || force) saveBranchesLocal();
+    return added;
+  }
+
+  /* -----------------------------------------------------------
      4. MODEL EVENT & PENYIMPANAN
      ----------------------------------------------------------- */
   function toAmount(v) {
@@ -369,6 +457,11 @@
   }
   function toISODate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : ''; }
   function cleanText(v, max) { return String(v ?? '').trim().slice(0, max); }
+  // Hanya tautan http(s) yang diterima sebagai bukti bayar
+  function cleanUrl(v) {
+    const s = String(v ?? '').trim();
+    return /^https?:\/\/[^\s<>"']+$/i.test(s) ? s.slice(0, 500) : '';
+  }
 
   function normalizeEvent(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -411,6 +504,9 @@
       periodeSelesai,
       ppn: toAmount(raw.ppn),
       pph: toAmount(raw.pph),
+      tglBayar: toISODate(raw.tglBayar),
+      buktiUrl: cleanUrl(raw.buktiUrl),
+      ketBayar: cleanText(raw.ketBayar, 300),
       extra,
       selesai: Boolean(raw.selesai),
       selesaiPada: raw.selesai ? (raw.selesaiPada === undefined ? new Date().toISOString() : (raw.selesaiPada || null)) : null,
@@ -468,6 +564,7 @@
 
   function saveEvents() {
     if (SYNC.on) { queuePush(); return; }
+    registerUsedBranchesLocal();
     if (!storageSet(STORAGE_KEY, JSON.stringify(state.events))) {
       toast('Penyimpanan browser penuh atau diblokir, jadi perubahan belum tersimpan. Ekspor ke CSV sebagai cadangan.', { timeout: 8000 });
     }
@@ -481,6 +578,13 @@
       if (typeof p.showDone === 'boolean') state.showDone = p.showDone;
       if (typeof p.leftOpen === 'boolean' && !isMobile()) state.leftOpen = p.leftOpen;
       if (hasCat(p.lastKategori)) state.lastKategori = p.lastKategori;
+      if (typeof p.branch === 'string') state.branch = p.branch.slice(0, 60);
+      if ([30, 90, 365].includes(p.fundsDays)) state.fundsDays = p.fundsDays;
+      // Mode lokal: pengaturan pengingat disimpan bersama preferensi
+      if (!SYNC.on && p.reminder) {
+        REMINDER_DAYS = clamp(Number(p.reminder.hari) || 30, 1, 365);
+        SEWA_REMINDER_DAYS = clamp(Number(p.reminder.sewa) || 90, 1, 365);
+      }
     } catch (err) { /* preferensi rusak diabaikan */ }
   }
 
@@ -491,10 +595,13 @@
       showDone: state.showDone,
       leftOpen: state.leftOpen,
       lastKategori: state.lastKategori,
+      branch: state.branch,
+      fundsDays: state.fundsDays,
+      reminder: SYNC.on ? undefined : { hari: REMINDER_DAYS, sewa: SEWA_REMINDER_DAYS },
     }));
   }
 
-  function isVisible(ev) { return filterOn(ev.kategori) && (state.showDone || !ev.selesai); }
+  function isVisible(ev) { return passes(ev) && (state.showDone || !ev.selesai); }
 
   // Urutan dalam satu hari: event sepanjang hari dulu, lalu berdasarkan jam
   function sortEvents(a, b) {
@@ -585,6 +692,15 @@
     return [...tagged, ...legacy.filter((ev) => batch[ev.dibuat] >= 8)];
   }
 
+  // Cabang dari data contoh ikut dihapus dari daftar bila sudah tidak dipakai
+  function pruneSampleBranches() {
+    if (SYNC.on) return;
+    const used = branchUsage();
+    const before = BRANCHES.length;
+    BRANCHES = BRANCHES.filter((b) => !(['kantor pusat', 'cabang selatan'].includes(branchKey(b.nama)) && !b.entitas && !used.get(branchKey(b.nama))));
+    if (BRANCHES.length !== before) saveBranchesLocal();
+  }
+
   async function clearSamples() {
     if (SYNC.on) return;
     const samples = findSampleEvents();
@@ -598,6 +714,7 @@
     const ids = new Set(samples.map((ev) => ev.id));
     state.events = state.events.filter((ev) => !ids.has(ev.id));
     if (ids.has(state.selectedId)) state.selectedId = null;
+    pruneSampleBranches();
     saveEvents();
     render();
     toast(`${samples.length} event contoh dihapus.`, {
@@ -616,7 +733,9 @@
     renderView(idx);
     renderMiniCal(idx);
     renderFilters();
+    renderBranchFilter();
     renderSummary();
+    renderFunds();
     renderReminders();
     renderRightTabs();
     renderDetail();
@@ -634,6 +753,7 @@
     renderMiniCal(buildIndex());
     renderFilters();
     renderSummary();
+    renderFunds();
     renderReminders();
     renderDetail();
     renderActivity();
@@ -909,7 +1029,7 @@
     const ym = toISO(state.cursor).slice(0, 7);
     const counts = {};
     catKeys().forEach((k) => { counts[k] = 0; });
-    state.events.forEach((ev) => { if (ev.tanggal.startsWith(ym)) counts[ev.kategori] += 1; });
+    state.events.forEach((ev) => { if (ev.tanggal.startsWith(ym) && branchOn(ev)) counts[ev.kategori] += 1; });
 
     els.calFilters.innerHTML = catKeys().map((k) => `<li class="cal-filter-item"><label class="cal-filter cat-${k}">`
       + `<input type="checkbox" class="chk chk--lg" data-filter="${k}" ${filterOn(k) ? 'checked' : ''}>`
@@ -921,11 +1041,30 @@
     els.chkShowDone.checked = state.showDone;
   }
 
+  /* ---------- Filter cabang ---------- */
+  function renderBranchFilter() {
+    const list = allBranches();
+    if (state.branch && !list.some((b) => branchKey(b.nama) === branchKey(state.branch))) state.branch = '';
+    const usage = branchUsage();
+    els.branchSection.hidden = !list.length && !canManageBranches();
+    els.btnManageBranch.hidden = !canManageBranches();
+    els.branchFilter.disabled = !list.length;
+    els.branchFilter.innerHTML = `<option value="">${list.length ? `Semua cabang (${list.length})` : 'Belum ada cabang'}</option>`
+      + list.map((b) => {
+        const n = usage.get(branchKey(b.nama)) || 0;
+        const tag = b.aktif ? '' : ' (nonaktif)';
+        return `<option value="${escapeHTML(b.nama)}">${escapeHTML(b.nama)}${tag}${n ? ` · ${n}` : ''}</option>`;
+      }).join('');
+    const cur = list.find((b) => branchKey(b.nama) === branchKey(state.branch));
+    els.branchFilter.value = cur ? cur.nama : '';
+    els.branchFilter.classList.toggle('is-active', Boolean(cur));
+  }
+
   /* ---------- Ringkasan bulan berjalan ---------- */
   function renderSummary() {
     const c = state.cursor;
     const ym = toISO(c).slice(0, 7);
-    const inMonth = state.events.filter((ev) => ev.tanggal.startsWith(ym) && filterOn(ev.kategori));
+    const inMonth = state.events.filter((ev) => ev.tanggal.startsWith(ym) && passes(ev));
     const pay = inMonth.filter((ev) => CATEGORIES[ev.kategori].payment);
     const work = inMonth.filter((ev) => !CATEGORIES[ev.kategori].payment);
     const total = pay.reduce((s, ev) => s + (ev.nominal || 0), 0);
@@ -934,7 +1073,8 @@
     const workDone = work.filter((ev) => ev.selesai).length;
     const pct = total ? Math.round((paid / total) * 100) : 0;
 
-    els.monthSummary.innerHTML = `<h2 class="summary__title">Ringkasan ${MONTHS[c.getMonth()]} ${c.getFullYear()}</h2>`
+    const scope = state.branch ? ` <span class="summary__scope">${escapeHTML(state.branch)}</span>` : '';
+    els.monthSummary.innerHTML = `<h2 class="summary__title">Ringkasan ${MONTHS[c.getMonth()]} ${c.getFullYear()}${scope}</h2>`
       + '<p class="summary__label">Total tagihan</p>'
       + `<p class="summary__total">${fmtIDR(total)}</p>`
       + `<div class="progress" role="progressbar" aria-label="Persentase tagihan lunas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>`
@@ -943,19 +1083,66 @@
       + `<div class="sum-row"><span>Agenda lain selesai</span><strong>${workDone} dari ${work.length}</strong></div>`;
   }
 
-  /* ---------- Pengingat H-30 sampai Hari-H ---------- */
+  /* ---------- Rekap kebutuhan dana (tagihan belum lunas) ---------- */
+  function unpaidItems() {
+    return state.events
+      .filter((ev) => CATEGORIES[ev.kategori].payment && !ev.selesai && passes(ev))
+      .map((ev) => ({ ev, d: daysUntil(ev.tanggal) }));
+  }
+  function sumNominal(list) { return list.reduce((s, x) => s + ((x.ev || x).nominal || 0), 0); }
+
+  function renderFunds() {
+    const days = state.fundsDays;
+    const items = unpaidItems();
+    const late = items.filter((x) => x.d < 0);
+    const win = items.filter((x) => x.d >= 0 && x.d <= days);
+    const byCat = new Map();
+    win.forEach((x) => {
+      const g = byCat.get(x.ev.kategori) || { total: 0, count: 0 };
+      g.total += x.ev.nominal || 0;
+      g.count += 1;
+      byCat.set(x.ev.kategori, g);
+    });
+    const noAmount = win.filter((x) => !x.ev.nominal).length;
+    const until = addDays(startOfDay(new Date()), days);
+    const seg = [30, 90, 365].map((n) => `<button type="button" data-action="funds-days" data-days="${n}" class="${n === days ? 'is-active' : ''}" aria-pressed="${n === days}">${n === 365 ? '1 thn' : `${n} hr`}</button>`).join('');
+    const scope = state.branch ? ` <span class="summary__scope">${escapeHTML(state.branch)}</span>` : '';
+
+    let html = `<div class="funds__head"><h2 class="summary__title">Kebutuhan dana${scope}</h2>`
+      + `<div class="mini-seg" role="group" aria-label="Rentang rekap">${seg}</div></div>`
+      + `<p class="summary__label">Belum lunas, jatuh tempo s.d. ${fmtDateMedium(until)}</p>`
+      + `<p class="summary__total">${fmtIDR(sumNominal(win))}</p>`
+      + `<div class="sum-row"><span>${win.length} tagihan</span><strong></strong></div>`;
+    [...byCat.entries()].sort((a, b) => b[1].total - a[1].total).forEach(([k, g]) => {
+      html += `<div class="sum-row"><span><span class="cat-dot cat-${k}"></span>${escapeHTML(CATEGORIES[k].short)} (${g.count})</span><strong>${fmtIDR(g.total)}</strong></div>`;
+    });
+    if (late.length) html += `<div class="sum-row sum-row--late"><span>Terlambat (${late.length})</span><strong>${fmtIDR(sumNominal(late))}</strong></div>`;
+    if (noAmount) html += `<p class="funds__note">${noAmount} tagihan belum diisi nominalnya.</p>`;
+    html += '<button type="button" class="link-btn link-btn--add funds__more" data-action="open-funds">Rincian per bulan &amp; cabang</button>';
+    els.fundsSummary.innerHTML = html;
+  }
+
+  /* ---------- Pengingat H-30 sampai Hari-H (sewa mulai H-90) ---------- */
+  function reminderWindow(ev) { return ev.kategori === 'sewa' ? Math.max(REMINDER_DAYS, SEWA_REMINDER_DAYS) : REMINDER_DAYS; }
+
   function computeReminders() {
     return state.events
-      .filter((ev) => filterOn(ev.kategori) && !ev.selesai)
+      .filter((ev) => passes(ev) && !ev.selesai)
       .map((ev) => ({ ev, d: daysUntil(ev.tanggal) }))
-      .filter((x) => x.d <= REMINDER_DAYS)
+      .filter((x) => x.d <= reminderWindow(x.ev))
       .sort((a, b) => a.d - b.d || sortEvents(a.ev, b.ev));
+  }
+
+  // Tonggak notifikasi browser: H-30, H-14, H-7, H-3, H-1, Hari-H; sewa juga H-90 dan H-60
+  function milestonesFor(ev) {
+    if (ev.kategori !== 'sewa') return NOTIFY_MILESTONES;
+    return [...new Set([SEWA_REMINDER_DAYS, 60, ...NOTIFY_MILESTONES])].filter((d) => d <= reminderWindow(ev));
   }
 
   function notifBlockHTML() {
     if (!('Notification' in window)) return '';
     if (Notification.permission === 'granted') {
-      return '<p class="notif-note">Notifikasi browser aktif untuk H-30, H-14, H-7, H-3, H-1, dan Hari-H.</p>';
+      return `<p class="notif-note">Notifikasi browser aktif untuk H-30, H-14, H-7, H-3, H-1, dan Hari-H${SEWA_REMINDER_DAYS > 30 ? ` (sewa juga H-${SEWA_REMINDER_DAYS}${SEWA_REMINDER_DAYS > 60 ? ' dan H-60' : ''})` : ''}.</p>`;
     }
     if (Notification.permission === 'denied') {
       return '<p class="notif-note">Notifikasi browser diblokir. Izinkan lewat pengaturan situs di browser jika ingin mendapat pemberitahuan.</p>';
@@ -986,16 +1173,19 @@
     els.btnToggleRight.title = urgent ? `${urgent} jadwal jatuh tempo dalam 7 hari atau terlambat` : 'Pengingat';
     els.tabRemindersCount.textContent = list.length ? String(list.length) : '';
 
+    const R = REMINDER_DAYS;
+    const S = Math.max(R, SEWA_REMINDER_DAYS);
     const groups = [
       { title: 'Terlambat', test: (d) => d < 0 },
       { title: 'Hari ini', test: (d) => d === 0 },
       { title: '7 hari ke depan', test: (d) => d >= 1 && d <= 7 },
-      { title: '8–30 hari ke depan', test: (d) => d > 7 },
+      { title: `8–${R} hari ke depan`, test: (d) => d > 7 && d <= R },
+      { title: `Sewa: ${Math.max(R, 7) + 1}–${S} hari ke depan`, test: (d) => d > Math.max(R, 7) },
     ];
 
     let html = notifBlockHTML();
     if (!list.length) {
-      html += '<div class="empty"><p>Tidak ada jadwal yang jatuh tempo dalam 30 hari ke depan.</p>'
+      html += `<div class="empty"><p>Tidak ada jadwal yang jatuh tempo dalam ${R} hari ke depan${S > R ? ` (sewa: ${S} hari)` : ''}.</p>`
         + '<button type="button" class="btn btn--tonal" data-action="create-first">Buat event</button></div>';
     } else {
       groups.forEach((g) => {
@@ -1043,7 +1233,11 @@
     if (ev.mulai) rows.push(detailRow(ICON.clock, 'Waktu', `${fmtTimeRange(ev)} <span class="muted">(${fmtDuration(ev.durasi)})</span>`));
 
     const lokasi = [ev.cabang, ev.unit].filter(Boolean).map(escapeHTML).join(', ');
-    if (lokasi) rows.push(detailRow(ICON.pin, 'Lokasi', lokasi));
+    if (lokasi) {
+      const br = findBranch(ev.cabang);
+      const meta = [br && br.entitas ? escapeHTML(br.entitas) : '', br && !br.aktif ? 'cabang nonaktif' : ''].filter(Boolean).join(' · ');
+      rows.push(detailRow(ICON.pin, 'Lokasi', lokasi + (meta ? ` <span class="muted small">${meta}</span>` : '')));
+    }
     if (ev.tahap) rows.push(detailRow(ICON.layers, 'Tahap pembayaran', escapeHTML(ev.tahap)));
     const period = periodHTML(ev);
     if (period) rows.push(detailRow(ICON.range, ev.kategori === 'sewa' ? 'Masa sewa' : 'Periode', period));
@@ -1062,6 +1256,19 @@
     const doneStamp = ev.selesai ? fmtStamp(ev.selesaiPada) : '';
     const doneAt = doneStamp ? ` <span class="muted small">pada ${doneStamp}</span>` : '';
     rows.push(detailRow(ICON.status, 'Status', `<span class="status-pill${ev.selesai ? ' is-done' : ''}">${statusText(ev)}</span>${doneAt}`));
+
+    const hasProof = Boolean(ev.tglBayar || ev.buktiUrl || ev.ketBayar);
+    if (cat.payment) {
+      let pay = '';
+      if (hasProof) {
+        if (ev.tglBayar) pay += `<span>Dibayar ${fmtDateLong(parseISO(ev.tglBayar))}</span>`;
+        if (ev.buktiUrl) pay += `<a class="proof-link" href="${escapeHTML(ev.buktiUrl)}" target="_blank" rel="noopener noreferrer">${ICON.clip}Lihat bukti</a>`;
+        if (ev.ketBayar) pay += `<span class="pre muted small proof-note">${escapeHTML(ev.ketBayar)}</span>`;
+      } else {
+        pay = `<span class="muted">${ev.selesai ? 'Lunas, belum ada bukti pembayaran' : 'Belum ada bukti pembayaran'}</span>`;
+      }
+      rows.push(detailRow(ICON.receipt, 'Pembayaran', pay));
+    }
 
     if (SYNC.on) {
       const who = (email) => (email ? escapeHTML(userLabel(email)) : 'Admin (langsung di Google Sheet)');
@@ -1084,6 +1291,7 @@
       + `<p class="detail__source">${{ csv: 'Diimpor dari CSV', contoh: 'Data contoh' }[ev.sumber] || 'Dibuat manual'}</p>`
       + '<div class="detail__actions">'
       + (canToggle(ev) ? `<button type="button" class="btn ${ev.selesai ? 'btn--outline' : 'btn--primary'} btn--block" data-action="toggle-status" data-id="${id}">${ev.selesai ? `Batalkan status ${word.toLowerCase()}` : `Tandai ${word.toLowerCase()}`}</button>` : '')
+      + (cat.payment && canToggle(ev) ? `<button type="button" class="btn btn--tonal btn--block" data-action="pay" data-id="${id}">${hasProof ? 'Ubah bukti pembayaran' : 'Catat pembayaran &amp; bukti'}</button>` : '')
       + '<div class="detail__row-actions">'
       + (canEdit(ev) ? `<button type="button" class="btn btn--outline" data-action="edit" data-id="${id}">Edit</button>` : '')
       + `<button type="button" class="btn btn--outline" data-action="reveal" data-id="${id}">Lihat di kalender</button>`
@@ -1487,13 +1695,11 @@
     els.fNominal.value = ev && ev.nominal ? formatThousands(ev.nominal) : '';
     els.fPPN.value = ev && ev.ppn ? formatThousands(ev.ppn) : '';
     els.fPPh.value = ev && ev.pph ? formatThousands(ev.pph) : '';
-    els.fCabang.value = ev ? ev.cabang : '';
+    fillCabangSelect(ev ? ev.cabang : '');
     els.fUnit.value = ev ? ev.unit : '';
     els.fTahap.value = ev ? ev.tahap : '';
     els.fPeriodeMulai.value = ev ? ev.periodeMulai : '';
     els.fPeriodeSelesai.value = ev ? ev.periodeSelesai : '';
-    const cabangList = [...new Set(state.events.map((x) => x.cabang).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
-    els.cabangList.innerHTML = cabangList.map((c) => `<option value="${escapeHTML(c)}"></option>`).join('');
     els.fCatatan.value = ev ? ev.catatan : '';
     els.fUlangi.value = 'none';
     els.fJumlah.value = 12;
@@ -1508,11 +1714,40 @@
     setTimeout(() => els.fJudul.focus(), 0);
   }
 
+  /* Pilihan cabang di form: cabang aktif dari daftar; cabang lama/nonaktif tetap muncul bila sedang dipakai */
+  function fillCabangSelect(current) {
+    const list = allBranches();
+    const curKey = branchKey(current);
+    let html = '<option value="">— Pilih cabang —</option>';
+    let selected = '';
+    list.forEach((b) => {
+      const isCur = branchKey(b.nama) === curKey;
+      if (!b.aktif && !isCur) return;
+      if (isCur) selected = b.nama;
+      html += `<option value="${escapeHTML(b.nama)}">${escapeHTML(b.nama)}${b.aktif ? '' : ' (nonaktif)'}${b.entitas ? ` · ${escapeHTML(b.entitas)}` : ''}</option>`;
+    });
+    if (current && !selected) {
+      selected = current;
+      html += `<option value="${escapeHTML(current)}">${escapeHTML(current)}</option>`;
+    }
+    if (canManageBranches()) html += '<option value="__new__">+ Tambah cabang baru…</option>';
+    els.fCabang.innerHTML = html;
+    els.fCabang.value = selected;
+    els.fCabang.dataset.prev = selected;
+    els.fCabangHint.hidden = canManageBranches();
+  }
+
+  function onCabangChange() {
+    if (els.fCabang.value !== '__new__') { els.fCabang.dataset.prev = els.fCabang.value; return; }
+    els.fCabang.value = els.fCabang.dataset.prev || '';
+    openBranchModal({ quickAdd: true, onCreated: (nama) => { fillCabangSelect(nama); els.fCabang.focus(); } });
+  }
+
   function readForm() {
     const kategori = getRadio();
     const isSewa = kategori === 'sewa';
     const isPayment = CATEGORIES[kategori].payment;
-    const cabang = isSewa ? els.fCabang.value.trim() : '';
+    const cabang = isSewa && els.fCabang.value !== '__new__' ? cleanBranchName(els.fCabang.value) : '';
     const unit = isSewa ? els.fUnit.value.trim() : '';
     const tahap = isSewa ? els.fTahap.value.trim() : '';
     const judul = els.fJudul.value.trim() || buildTitle({ kategori, cabang, unit, tahap });
@@ -1667,6 +1902,496 @@
       dlg.showModal();
       if (lastBtn) lastBtn.focus();
     });
+  }
+
+  /* -----------------------------------------------------------
+     8b. KELOLA CABANG
+     ----------------------------------------------------------- */
+  let branchEditing = null;     // kunci cabang yang sedang diubah di daftar
+  let branchOnCreated = null;   // dipanggil setelah cabang dibuat dari form event
+  let branchBusy = false;
+
+  function openBranchModal(opts) {
+    const { quickAdd = false, onCreated = null } = opts || {};
+    if (!canManageBranches()) return;
+    closePopovers();
+    branchEditing = null;
+    branchOnCreated = onCreated;
+    els.bName.value = '';
+    els.bEntitas.value = '';
+    els.bError.textContent = '';
+    els.branchModalTitle.textContent = quickAdd ? 'Tambah cabang baru' : 'Kelola cabang';
+    renderBranchModal();
+    if (!els.branchModal.open) els.branchModal.showModal();
+    els.branchModal.querySelector('.modal__body').scrollTop = 0;
+    setTimeout(() => els.bName.focus({ preventScroll: true }), 0);
+  }
+
+  function renderBranchModal() {
+    const list = allBranches();
+    const usage = branchUsage();
+    const showInactive = els.bShowInactive.checked;
+    const inactive = list.filter((b) => !b.aktif).length;
+    const shown = list.filter((b) => b.aktif || showInactive || branchKey(b.nama) === branchEditing);
+    els.entitasList.innerHTML = [...new Set(BRANCHES.map((b) => b.entitas).filter(Boolean))].sort()
+      .map((e) => `<option value="${escapeHTML(e)}"></option>`).join('');
+    els.branchCount.textContent = `${list.length - inactive} cabang aktif${inactive ? `, ${inactive} nonaktif` : ''}`;
+    els.bShowInactiveWrap.hidden = inactive === 0;
+
+    if (!shown.length) {
+      els.branchList.innerHTML = '<li class="branch-empty">Belum ada cabang. Tambahkan cabang pertama di atas.</li>';
+      return;
+    }
+    els.branchList.innerHTML = shown.map((b) => {
+      const key = branchKey(b.nama);
+      const name = escapeHTML(b.nama);
+      const n = usage.get(key) || 0;
+      if (key === branchEditing) {
+        return `<li class="branch-row is-editing"><form class="branch-edit" data-name="${name}" novalidate>`
+          + `<label class="field"><span>Nama cabang</span><input type="text" class="branch-edit__name" value="${name}" maxlength="60" autocomplete="off"></label>`
+          + `<label class="field"><span>Entitas / PT</span><input type="text" class="branch-edit__ent" value="${escapeHTML(b.entitas)}" maxlength="60" list="entitasList" autocomplete="off"></label>`
+          + '<div class="branch-edit__actions">'
+          + '<button type="button" class="btn btn--text btn--sm" data-action="branch-cancel">Batal</button>'
+          + '<button type="submit" class="btn btn--primary btn--sm">Simpan</button></div>'
+          + (n ? `<p class="branch-edit__hint">Mengganti nama juga memperbarui ${n} jadwal yang memakai cabang ini.</p>` : '')
+          + '</form></li>';
+      }
+      const meta = [b.entitas ? escapeHTML(b.entitas) : '', `${n} jadwal`, b.terdaftar ? '' : 'belum terdaftar'].filter(Boolean).join(' · ');
+      const actions = b.terdaftar
+        ? `<button type="button" class="icon-btn icon-btn--xs" data-action="branch-edit" data-name="${name}" aria-label="Ubah ${name}" title="Ubah nama / entitas">${ICON.pencil}</button>`
+          + `<button type="button" class="btn btn--text btn--sm" data-action="branch-toggle" data-name="${name}">${b.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>`
+        : `<button type="button" class="btn btn--text btn--sm" data-action="branch-register" data-name="${name}">Daftarkan</button>`;
+      return `<li class="branch-row${b.aktif ? '' : ' is-inactive'}">`
+        + `<span class="branch-row__ico">${ICON.building}</span>`
+        + `<div class="branch-row__main"><span class="branch-row__name">${name}</span><span class="branch-row__meta">${meta}</span></div>`
+        + `<span class="status-pill${b.aktif ? ' is-done' : ''}">${b.aktif ? 'Aktif' : 'Nonaktif'}</span>`
+        + `<div class="branch-row__actions">${actions}</div></li>`;
+    }).join('');
+    const editInput = els.branchList.querySelector('.branch-edit__name');
+    if (editInput) setTimeout(() => { editInput.focus({ preventScroll: true }); editInput.select(); editInput.closest('.branch-row').scrollIntoView({ block: 'nearest' }); }, 0);
+  }
+
+  function setBranchBusy(on) {
+    branchBusy = on;
+    els.branchModal.classList.toggle('is-busy', on);
+    els.branchModal.querySelectorAll('button, input').forEach((x) => { if (!x.closest('[data-close]')) x.disabled = on; });
+  }
+
+  function validateBranchInput(nama, exceptKey) {
+    if (!nama) return 'Nama cabang wajib diisi.';
+    if (/^[=+\-@]/.test(nama)) return 'Nama cabang tidak boleh diawali tanda = + - @';
+    const dup = allBranches().find((b) => b.terdaftar && branchKey(b.nama) === branchKey(nama) && branchKey(b.nama) !== exceptKey);
+    return dup ? `Cabang "${dup.nama}" sudah ada di daftar.` : '';
+  }
+
+  async function createBranch(namaRaw, entitasRaw) {
+    if (branchBusy) return;
+    const nama = cleanBranchName(namaRaw);
+    const entitas = cleanText(entitasRaw, 60);
+    const err = validateBranchInput(nama, null);
+    if (err) { els.bError.textContent = err; els.bName.focus(); return; }
+    els.bError.textContent = '';
+    if (SYNC.on) {
+      setBranchBusy(true);
+      try {
+        await api('branch', { op: 'create', nama, entitas });
+      } catch (e) {
+        setBranchBusy(false);
+        els.bError.textContent = e.message;
+        if (e.code === 'auth') logout(e.message);
+        return;
+      }
+      await reloadNow();
+      setBranchBusy(false);
+    } else {
+      const existing = findBranch(nama);
+      if (existing) Object.assign(existing, { entitas: entitas || existing.entitas, aktif: true });
+      else BRANCHES.push({ nama, entitas, aktif: true, keterangan: '' });
+      saveBranchesLocal();
+      render();
+    }
+    toast(`Cabang "${nama}" ditambahkan.`);
+    const cb = branchOnCreated;
+    if (cb) {
+      branchOnCreated = null;
+      els.branchModal.close();
+      cb(nama);
+      return;
+    }
+    els.bName.value = '';
+    els.bEntitas.value = '';
+    renderBranchModal();
+    els.bName.focus({ preventScroll: true });
+  }
+
+  async function updateBranch(oldName, changes) {
+    if (branchBusy) return false;
+    const b = findBranch(oldName);
+    if (!b) { els.bError.textContent = 'Cabang tidak ditemukan. Muat ulang data lalu coba lagi.'; return false; }
+    const namaBaru = changes.namaBaru === undefined ? b.nama : cleanBranchName(changes.namaBaru);
+    const entitas = changes.entitas === undefined ? b.entitas : cleanText(changes.entitas, 60);
+    const aktif = changes.aktif === undefined ? b.aktif : Boolean(changes.aktif);
+    const err = validateBranchInput(namaBaru, branchKey(b.nama));
+    if (err) { els.bError.textContent = err; return false; }
+    const renaming = namaBaru !== b.nama;
+    const affected = state.events.filter((ev) => branchKey(ev.cabang) === branchKey(b.nama));
+    if (renaming && affected.length) {
+      const ok = await askConfirm({
+        title: `Ganti nama "${b.nama}" menjadi "${namaBaru}"?`,
+        message: `${affected.length} jadwal yang memakai cabang ini ikut diperbarui${SYNC.on ? ' untuk semua pengguna' : ''}. Perubahan tercatat di riwayat.`,
+        buttons: [{ label: 'Batal', value: null }, { label: 'Ganti nama', value: 'yes', variant: 'primary' }],
+      });
+      if (ok !== 'yes') return false;
+    }
+    if (!aktif && b.aktif) {
+      const ok = await askConfirm({
+        title: `Nonaktifkan cabang "${b.nama}"?`,
+        message: `Cabang tidak muncul lagi di pilihan form Create. ${affected.length ? `${affected.length} jadwal lamanya tetap tersimpan dan tetap tampil di kalender.` : ''} Bisa diaktifkan kembali kapan saja.`,
+        buttons: [{ label: 'Batal', value: null }, { label: 'Nonaktifkan', value: 'yes', variant: 'danger' }],
+      });
+      if (ok !== 'yes') return false;
+    }
+    els.bError.textContent = '';
+    let msg = 'Cabang diperbarui.';
+    if (renaming) msg = `Cabang diganti menjadi "${namaBaru}"${affected.length ? `, ${affected.length} jadwal diperbarui` : ''}.`;
+    else if (aktif !== b.aktif) msg = `Cabang "${b.nama}" ${aktif ? 'diaktifkan' : 'dinonaktifkan'}.`;
+    if (SYNC.on) {
+      setBranchBusy(true);
+      try {
+        await api('branch', { op: 'update', nama: b.nama, namaBaru, entitas, aktif });
+      } catch (e) {
+        setBranchBusy(false);
+        els.bError.textContent = e.message;
+        if (e.code === 'auth') logout(e.message);
+        return false;
+      }
+      if (renaming && branchKey(state.branch) === branchKey(b.nama)) state.branch = namaBaru;
+      await reloadNow();
+      setBranchBusy(false);
+    } else {
+      if (renaming) {
+        affected.forEach((ev) => {
+          const auto = ev.judul === buildTitle(ev);
+          ev.cabang = namaBaru;
+          if (auto) ev.judul = buildTitle(ev) || ev.judul;
+        });
+        if (branchKey(state.branch) === branchKey(b.nama)) state.branch = namaBaru;
+      }
+      Object.assign(b, { nama: namaBaru, entitas, aktif });
+      saveBranchesLocal();
+      if (renaming && affected.length) saveEvents();
+      render();
+    }
+    toast(msg);
+    return true;
+  }
+
+  /* -----------------------------------------------------------
+     8c. BUKTI PEMBAYARAN
+     ----------------------------------------------------------- */
+  let payingId = null;
+  let payBusy = false;
+  const PROOF_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif' };
+
+  function openPayModal(id) {
+    const ev = getEvent(id);
+    if (!ev || !CATEGORIES[ev.kategori].payment || !canToggle(ev)) return;
+    closePopovers();
+    payingId = id;
+    els.payFor.innerHTML = `<strong>${escapeHTML(ev.judul)}</strong>`
+      + `<span>Jatuh tempo ${fmtDateLong(parseISO(ev.tanggal))}${ev.nominal ? ` · ${fmtIDR(ev.nominal)}` : ''}</span>`;
+    els.pTanggal.value = ev.tglBayar || todayISO();
+    els.pTanggal.max = toISO(addDays(startOfDay(new Date()), 0));
+    els.pFile.value = '';
+    els.pLink.value = ev.buktiUrl || '';
+    els.pKet.value = ev.ketBayar || '';
+    els.pLunas.checked = true;
+    els.pFileWrap.hidden = !SYNC.on;
+    els.pLocalNote.hidden = SYNC.on;
+    els.pLinkLabel.textContent = SYNC.on ? 'Atau tempel link bukti' : 'Link bukti (Google Drive, OneDrive, dan sebagainya)';
+    els.pCurrent.innerHTML = ev.buktiUrl
+      ? `Bukti saat ini: <a class="proof-link" href="${escapeHTML(ev.buktiUrl)}" target="_blank" rel="noopener noreferrer">${ICON.clip}Buka bukti</a>. Pilih file baru untuk menggantinya.`
+      : '';
+    els.pCurrent.hidden = !ev.buktiUrl || !SYNC.on;
+    els.pClear.hidden = !(ev.tglBayar || ev.buktiUrl || ev.ketBayar);
+    els.pError.textContent = '';
+    setPayBusy(false);
+    els.payModal.showModal();
+    setTimeout(() => els.pTanggal.focus(), 0);
+  }
+
+  function setPayBusy(on, label) {
+    payBusy = on;
+    els.pSave.disabled = on;
+    els.pClear.disabled = on;
+    els.pSave.textContent = on ? (label || 'Menyimpan…') : 'Simpan';
+  }
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('File tidak bisa dibaca.'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  function proofMime(file) {
+    const ext = (String(file.name).match(/\.([a-z0-9]+)$/i) || [])[1];
+    const byExt = ext ? PROOF_MIME[ext.toLowerCase()] : '';
+    const t = String(file.type || '').toLowerCase();
+    if (Object.values(PROOF_MIME).includes(t)) return t;
+    return byExt || '';
+  }
+
+  async function savePay(e) {
+    e.preventDefault();
+    if (payBusy) return;
+    const ev0 = getEvent(payingId);
+    if (!ev0) { els.payModal.close(); return; }
+    const tgl = els.pTanggal.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tgl)) { els.pError.textContent = 'Isi tanggal bayar.'; els.pTanggal.focus(); return; }
+    if (tgl > todayISO()) { els.pError.textContent = 'Tanggal bayar tidak boleh setelah hari ini.'; els.pTanggal.focus(); return; }
+    let url = els.pLink.value.trim();
+    if (url && !cleanUrl(url)) { els.pError.textContent = 'Link bukti harus diawali http:// atau https://'; els.pLink.focus(); return; }
+    const file = SYNC.on && els.pFile.files && els.pFile.files[0];
+    if (file) {
+      const mime = proofMime(file);
+      if (!mime) { els.pError.textContent = 'Format file belum didukung. Gunakan PDF, JPG, PNG, atau WEBP.'; return; }
+      if (file.size > PROOF_MAX_MB * 1024 * 1024) { els.pError.textContent = `Ukuran file maksimal ${PROOF_MAX_MB} MB.`; return; }
+      els.pError.textContent = '';
+      setPayBusy(true, 'Mengunggah…');
+      try {
+        const data = await readFileAsDataURL(file);
+        const res = await api('upload', { name: file.name, mime, data, label: ev0.judul, tanggal: tgl });
+        url = res.url;
+      } catch (err) {
+        setPayBusy(false);
+        els.pError.textContent = err.message;
+        if (err.code === 'auth') { els.payModal.close(); logout(err.message); }
+        return;
+      }
+    }
+    const ev = getEvent(payingId);
+    if (!ev) { setPayBusy(false); els.payModal.close(); return; }
+    const before = cloneEv(ev);
+    ev.tglBayar = tgl;
+    ev.buktiUrl = cleanUrl(url);
+    ev.ketBayar = cleanText(els.pKet.value, 300);
+    const lunas = els.pLunas.checked;
+    if (lunas !== ev.selesai) {
+      ev.selesai = lunas;
+      ev.selesaiPada = lunas ? new Date().toISOString() : null;
+    }
+    saveEvents();
+    setPayBusy(false);
+    els.payModal.close();
+    render();
+    toast(file ? 'Bukti diunggah dan pembayaran dicatat.' : 'Pembayaran dicatat.', {
+      action: 'Urungkan',
+      onAction: () => { const cur = getEvent(before.id); if (cur) { Object.assign(cur, before); saveEvents(); render(); } },
+    });
+  }
+
+  async function clearPay() {
+    const ev = getEvent(payingId);
+    if (!ev) return;
+    const ok = await askConfirm({
+      title: 'Hapus catatan pembayaran?',
+      message: 'Tanggal bayar, link bukti, dan keterangan pembayaran dikosongkan. Status lunas tidak berubah. File yang sudah diunggah tetap ada di folder Google Drive.',
+      buttons: [{ label: 'Batal', value: null }, { label: 'Hapus', value: 'yes', variant: 'danger' }],
+    });
+    if (ok !== 'yes') return;
+    const cur = getEvent(payingId);
+    if (!cur) return;
+    const before = cloneEv(cur);
+    cur.tglBayar = '';
+    cur.buktiUrl = '';
+    cur.ketBayar = '';
+    saveEvents();
+    els.payModal.close();
+    render();
+    toast('Catatan pembayaran dihapus.', { action: 'Urungkan', onAction: () => { const x = getEvent(before.id); if (x) { Object.assign(x, before); saveEvents(); render(); } } });
+  }
+
+  /* -----------------------------------------------------------
+     8d. REKAP KEBUTUHAN DANA
+     ----------------------------------------------------------- */
+  function fundsData() {
+    const today = startOfDay(new Date());
+    const tISO = toISO(today);
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    const pay = state.events.filter((ev) => CATEGORIES[ev.kategori].payment && passes(ev));
+    const months = [];
+    for (let i = 0; i < 12; i += 1) {
+      const m = addMonthsClamped(first, i, 1);
+      const ym = toISO(m).slice(0, 7);
+      const list = pay.filter((ev) => ev.tanggal.startsWith(ym));
+      const paid = list.filter((ev) => ev.selesai);
+      months.push({ ym, date: m, count: list.length, total: sumNominal(list), paid: sumNominal(paid), unpaid: sumNominal(list.filter((ev) => !ev.selesai)), unpaidCount: list.length - paid.length });
+    }
+    const firstISO = toISO(first);
+    const lateBefore = pay.filter((ev) => !ev.selesai && ev.tanggal < firstISO);
+    const unpaid = pay.filter((ev) => !ev.selesai);
+    const horizon = toISO(addDays(today, 365));
+    const byBranch = new Map();
+    unpaid.filter((ev) => ev.tanggal <= horizon).forEach((ev) => {
+      const key = branchKey(ev.cabang) || '~';
+      const g = byBranch.get(key) || { nama: ev.cabang || '', count: 0, total: 0, late: 0, next: null };
+      g.count += 1;
+      g.total += ev.nominal || 0;
+      if (ev.tanggal < tISO) g.late += 1;
+      else if (!g.next || ev.tanggal < g.next) g.next = ev.tanggal;
+      byBranch.set(key, g);
+    });
+    const branches = [...byBranch.values()].sort((a, b) => (a.nama ? 0 : 1) - (b.nama ? 0 : 1) || b.total - a.total);
+    const kpi = [30, 90, 365].map((n) => {
+      const lim = toISO(addDays(today, n));
+      const l = unpaid.filter((ev) => ev.tanggal >= tISO && ev.tanggal <= lim);
+      return { days: n, count: l.length, total: sumNominal(l) };
+    });
+    const late = unpaid.filter((ev) => ev.tanggal < tISO);
+    return { months, lateBefore, branches, kpi, late: { count: late.length, total: sumNominal(late) } };
+  }
+
+  function openFundsModal() {
+    closePopovers();
+    renderFundsModal();
+    els.fundsModal.showModal();
+  }
+
+  function renderFundsModal() {
+    const f = fundsData();
+    const filt = [];
+    const hidden = catKeys().filter((k) => CATEGORIES[k].payment && !filterOn(k));
+    if (hidden.length) filt.push(`kategori ${hidden.map((k) => CATEGORIES[k].short).join(', ')} disembunyikan`);
+    if (state.branch) filt.push(`hanya cabang ${state.branch}`);
+    els.fundsNote.textContent = `Tagihan dari semua kategori pembayaran${filt.length ? ` (${filt.join('; ')}, mengikuti filter di sidebar)` : ''}. Angka memakai kolom Nominal.`;
+    const kcard = (label, total, sub, tone) => `<div class="kpi${tone ? ` kpi--${tone}` : ''}"><span class="kpi__label">${label}</span><strong class="kpi__value">${fmtIDR(total)}</strong><span class="kpi__sub">${sub}</span></div>`;
+    els.fundsKpis.innerHTML = f.kpi.map((k) => kcard(k.days === 365 ? '12 bulan ke depan' : `${k.days} hari ke depan`, k.total, `${k.count} tagihan belum lunas`)).join('')
+      + kcard('Terlambat', f.late.total, `${f.late.count} tagihan`, f.late.count ? 'late' : '');
+
+    const peak = Math.max(...f.months.map((m) => m.unpaid));
+    let rows = '';
+    if (f.lateBefore.length) {
+      rows += `<tr class="is-late"><td>Terlambat (sebelum ${MONTHS[f.months[0].date.getMonth()]})</td><td class="num">${f.lateBefore.length}</td>`
+        + `<td class="num">${fmtIDR(sumNominal(f.lateBefore))}</td><td class="num">–</td><td class="num"><strong>${fmtIDR(sumNominal(f.lateBefore))}</strong></td></tr>`;
+    }
+    rows += f.months.map((m) => {
+      const isPeak = peak > 0 && m.unpaid === peak;
+      return `<tr${isPeak ? ' class="is-peak"' : ''}>`
+        + `<td><button type="button" class="link-cell" data-action="funds-goto" data-month="${m.ym}">${MONTHS[m.date.getMonth()]} ${m.date.getFullYear()}</button>${isPeak ? ' <span class="row-badge row-badge--peak">Tertinggi</span>' : ''}</td>`
+        + `<td class="num">${m.count || '–'}</td><td class="num">${m.total ? fmtIDR(m.total) : '–'}</td>`
+        + `<td class="num">${m.paid ? fmtIDR(m.paid) : '–'}</td><td class="num"><strong>${m.unpaid ? fmtIDR(m.unpaid) : '–'}</strong></td></tr>`;
+    }).join('');
+    const tot = f.months.reduce((a, m) => ({ count: a.count + m.count, total: a.total + m.total, paid: a.paid + m.paid, unpaid: a.unpaid + m.unpaid }), { count: 0, total: 0, paid: 0, unpaid: 0 });
+    rows += `<tr class="is-total"><td>Total 12 bulan</td><td class="num">${tot.count}</td><td class="num">${fmtIDR(tot.total)}</td><td class="num">${fmtIDR(tot.paid)}</td><td class="num"><strong>${fmtIDR(tot.unpaid)}</strong></td></tr>`;
+    els.fundsMonths.innerHTML = rows;
+
+    els.fundsBranches.innerHTML = f.branches.length ? f.branches.map((g) => {
+      const br = g.nama ? findBranch(g.nama) : null;
+      const next = g.next ? fmtDateMedium(parseISO(g.next)) : '–';
+      return `<tr><td>${g.nama ? escapeHTML(g.nama) : '<span class="muted">(Tanpa cabang)</span>'}</td>`
+        + `<td>${br && br.entitas ? escapeHTML(br.entitas) : '<span class="muted">–</span>'}</td>`
+        + `<td class="num">${g.count}${g.late ? ` <span class="row-badge row-badge--error">${g.late} terlambat</span>` : ''}</td>`
+        + `<td class="num"><strong>${fmtIDR(g.total)}</strong></td><td class="nowrap">${next}</td></tr>`;
+    }).join('') : '<tr><td colspan="5" class="muted">Tidak ada tagihan belum lunas dalam 12 bulan ke depan.</td></tr>';
+  }
+
+  function exportFundsCSV() {
+    const f = fundsData();
+    const rows = [['Rekap kebutuhan dana', `Dibuat ${dmy(todayISO())}`], [], ['Bulan', 'Jumlah tagihan', 'Total', 'Sudah lunas', 'Belum lunas']];
+    if (f.lateBefore.length) rows.push(['Terlambat (sebelum bulan ini)', f.lateBefore.length, sumNominal(f.lateBefore), 0, sumNominal(f.lateBefore)]);
+    f.months.forEach((m) => rows.push([`${MONTHS[m.date.getMonth()]} ${m.date.getFullYear()}`, m.count, m.total, m.paid, m.unpaid]));
+    rows.push([], ['Cabang', 'Entitas', 'Tagihan belum lunas (12 bulan)', 'Total belum lunas', 'Terlambat', 'Jatuh tempo terdekat']);
+    f.branches.forEach((g) => {
+      const br = g.nama ? findBranch(g.nama) : null;
+      rows.push([g.nama || '(Tanpa cabang)', br ? br.entitas : '', g.count, g.total, g.late, g.next ? dmy(g.next) : '']);
+    });
+    downloadText(`rekap-kebutuhan-dana-${todayISO()}.csv`, toCSV(rows));
+    toast('Rekap diunduh sebagai CSV.');
+  }
+
+  /* -----------------------------------------------------------
+     8e. PENGATURAN PENGINGAT & EMAIL
+     ----------------------------------------------------------- */
+  function fillSelect(sel, values, current, label) {
+    const vals = [...new Set([...values, current].filter((v) => v !== undefined && v !== null && v !== ''))].sort((a, b) => a - b);
+    sel.innerHTML = vals.map((v) => `<option value="${v}">${label(v)}</option>`).join('');
+    sel.value = String(current);
+  }
+
+  function openSettingsModal() {
+    if (!isAdmin()) return;
+    closePopovers();
+    const st = SYNC.settings || {};
+    fillSelect(els.sDays, [7, 14, 30, 45, 60], REMINDER_DAYS, (v) => `H-${v}`);
+    fillSelect(els.sSewaDays, [30, 60, 90, 120, 180], SEWA_REMINDER_DAYS, (v) => `H-${v}`);
+    els.sEmailWrap.hidden = !SYNC.on;
+    els.sLocalNote.hidden = SYNC.on;
+    els.sEmailOn.checked = Boolean(st.email_pengingat);
+    els.sEmailTo.value = st.email_penerima || '';
+    els.sEmailTo.placeholder = SYNC.me && SYNC.me.email ? `Kosong = pemilik spreadsheet` : '';
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+    fillSelect(els.sEmailHour, hours, Number.isFinite(Number(st.jam_email)) ? Number(st.jam_email) : 7, (v) => `${pad2(v)}.00`);
+    els.sError.textContent = '';
+    els.sSave.disabled = false;
+    els.sTest.disabled = false;
+    updateEmailFields();
+    els.settingsModal.showModal();
+  }
+
+  function updateEmailFields() {
+    const on = els.sEmailOn.checked;
+    els.sEmailTo.disabled = !on;
+    els.sEmailHour.disabled = !on;
+  }
+
+  async function saveSettingsForm(e) {
+    e.preventDefault();
+    const hari = Number(els.sDays.value);
+    const sewa = Number(els.sSewaDays.value);
+    if (!SYNC.on) {
+      REMINDER_DAYS = clamp(hari, 1, 365);
+      SEWA_REMINDER_DAYS = clamp(sewa, 1, 365);
+      savePrefs();
+      els.settingsModal.close();
+      render();
+      toast('Pengaturan pengingat disimpan.');
+      return;
+    }
+    const to = els.sEmailTo.value.trim();
+    const bad = to.split(/[\s,;]+/).filter((x) => x && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+    if (bad.length) { els.sError.textContent = `Alamat email tidak valid: ${bad.slice(0, 3).join(', ')}`; els.sEmailTo.focus(); return; }
+    els.sSave.disabled = true;
+    els.sError.textContent = '';
+    let res = null;
+    try {
+      res = await api('settings', { settings: { hari_pengingat: hari, hari_pengingat_sewa: sewa, email_pengingat: els.sEmailOn.checked, email_penerima: to, jam_email: Number(els.sEmailHour.value) } });
+    } catch (err) {
+      els.sSave.disabled = false;
+      els.sError.textContent = err.message;
+      if (err.code === 'auth') { els.settingsModal.close(); logout(err.message); }
+      if (err.code === 'server') reloadNow();
+      return;
+    }
+    els.settingsModal.close();
+    await reloadNow();
+    toast(res && res.trigger ? `Pengaturan disimpan. ${res.trigger}` : 'Pengaturan disimpan.', { timeout: 9000 });
+  }
+
+  async function sendTestEmail() {
+    els.sTest.disabled = true;
+    els.sError.textContent = '';
+    try {
+      const res = await api('test_email', {});
+      toast(`Email uji dikirim ke ${res.sentTo}${res.count ? ` (${res.count} jadwal)` : ''}. Periksa juga folder Spam.`, { timeout: 9000 });
+    } catch (err) {
+      els.sError.textContent = err.message;
+      if (err.code === 'auth') { els.settingsModal.close(); logout(err.message); }
+    } finally {
+      els.sTest.disabled = false;
+    }
   }
 
   /* -----------------------------------------------------------
@@ -2083,13 +2808,20 @@
       if (col.pph !== undefined) { const v = parseAmount(get('pph')); if (Number.isFinite(v)) pph = v; }
 
       const extra = extras.map((x) => ({ label: x.label, value: String(r[x.idx] ?? '').trim() })).filter((x) => x.value);
+      let tglBayar = '';
+      if (get('tglBayar')) {
+        const tb = parseDateTime(get('tglBayar'));
+        if (tb) tglBayar = tb.date; else warn(`Tanggal bayar "${get('tglBayar')}" tidak terbaca`);
+      }
+      const buktiUrl = cleanUrl(get('bukti'));
+      if (get('bukti') && !buktiUrl) warn('Bukti bayar bukan link http(s), tidak disimpan');
       const judul = get('judul') || buildTitle({ kategori, cabang, unit, tahap }) || (extra[0] && extra[0].value) || `${CATEGORIES[kategori].short} ${rowNo}`;
       const statusRaw = get('status');
       const selesai = statusRaw ? parseStatus(statusRaw) : (p.pastDone && dt.date < todayISO());
 
       const ev = normalizeEvent({
         id: uid(), dibuatOleh: currentEmail(), kategori, judul, tanggal: dt.date, mulai: dur.mulai, durasi: dur.durasi, nominal,
-        catatan: taxes.rest, cabang, unit, tahap, ppn, pph, extra,
+        catatan: taxes.rest, cabang, unit, tahap, ppn, pph, extra, tglBayar, buktiUrl, ketBayar: get('ketBayar'),
         periodeMulai: periode ? periode.mulai : '', periodeSelesai: periode ? periode.selesai : '',
         selesai, selesaiPada: selesai ? now : null, sumber: 'csv', dibuat: now,
       });
@@ -2173,6 +2905,13 @@
     if (counts.dup) stats.push(`<span class="stat stat--dup">${counts.dup} duplikat dilewati</span>`);
     if (counts.error) stats.push(`<span class="stat stat--error">${counts.error} perlu diperbaiki</span>`);
     if (warns) stats.push(`<span class="stat stat--warn">${warns} perlu dicek</span>`);
+    const allowedSt = p.includeSimilar ? ['new', 'similar'] : ['new'];
+    const newBranches = [...new Map(p.results
+      .filter((r) => r.ev && allowedSt.includes(r.status) && r.ev.cabang && !findBranch(r.ev.cabang))
+      .map((r) => [branchKey(r.ev.cabang), r.ev.cabang])).values()];
+    if (newBranches.length) {
+      stats.push(`<span class="stat stat--branch" title="Cabang ini otomatis ditambahkan ke daftar cabang">${newBranches.length} cabang baru: ${escapeHTML(newBranches.slice(0, 4).join(', '))}${newBranches.length > 4 ? ', …' : ''}</span>`);
+    }
     els.importStats.innerHTML = stats.join('');
 
     els.importBody.innerHTML = p.results.map((r) => {
@@ -2221,6 +2960,7 @@
       });
 
     state.events.push(...add);
+    if (removed.some((ev) => ev.sumber === 'contoh')) pruneSampleBranches();
     saveEvents();
     els.importModal.close();
 
@@ -2294,6 +3034,9 @@
       ev.mulai ? `${ev.mulai}-${minToTime(timeToMin(ev.mulai) + ev.durasi)}` : '',
       ev.catatan,
       ev.selesai ? doneWord(ev) : 'Belum',
+      ev.tglBayar ? dmy(ev.tglBayar) : '',
+      ev.buktiUrl,
+      ev.ketBayar,
       ...extraLabels.map((l) => (ev.extra.find((x) => x.label === l) || {}).value || ''),
     ]);
     downloadText(`kalender-${todayISO()}.csv`, toCSV([[...EXPORT_HEADER, ...extraLabels], ...rows]));
@@ -2328,7 +3071,7 @@
     const tISO = toISO(today);
 
     const due = computeReminders().filter(({ ev, d }) => {
-      if (d >= 0 && !NOTIFY_MILESTONES.includes(d)) return false;
+      if (d >= 0 && !milestonesFor(ev).includes(d)) return false;
       return !log[`${ev.id}|${d < 0 ? 'late' : d}`];
     });
 
@@ -2485,6 +3228,40 @@
         openCategoryModal(null, (key) => { buildCategoryOptionsKeep(key); });
         break;
       }
+      case 'manage-branches': openBranchModal(); break;
+      case 'branch-edit':
+        branchEditing = branchKey(el.dataset.name);
+        els.bError.textContent = '';
+        renderBranchModal();
+        break;
+      case 'branch-cancel':
+        branchEditing = null;
+        els.bError.textContent = '';
+        renderBranchModal();
+        break;
+      case 'branch-toggle': {
+        const b = findBranch(el.dataset.name);
+        if (b) updateBranch(b.nama, { aktif: !b.aktif }).then(() => { if (els.branchModal.open) renderBranchModal(); });
+        break;
+      }
+      case 'branch-register': createBranch(el.dataset.name, ''); break;
+      case 'pay': openPayModal(id); break;
+      case 'funds-days':
+        state.fundsDays = Number(el.dataset.days) || 90;
+        savePrefs();
+        renderFunds();
+        break;
+      case 'open-funds': openFundsModal(); break;
+      case 'funds-goto': {
+        const [y, m] = String(el.dataset.month).split('-').map(Number);
+        state.cursor = new Date(y, m - 1, 1);
+        state.view = 'month';
+        syncMini();
+        els.fundsModal.close();
+        render();
+        break;
+      }
+      case 'open-settings': openSettingsModal(); break;
       default: break;
     }
   }
@@ -2721,8 +3498,41 @@
     });
     els.importModal.addEventListener('close', () => { state.pendingImport = null; });
 
+    // Cabang
+    els.branchFilter.addEventListener('change', () => {
+      state.branch = els.branchFilter.value;
+      if (state.selectedId && !isVisible(getEvent(state.selectedId) || { kategori: 'meeting', cabang: '' })) state.selectedId = null;
+      render();
+    });
+    els.fCabang.addEventListener('change', onCabangChange);
+    els.branchAddForm.addEventListener('submit', (e) => { e.preventDefault(); createBranch(els.bName.value, els.bEntitas.value); });
+    els.branchList.addEventListener('submit', async (e) => {
+      const form = e.target.closest('.branch-edit');
+      if (!form) return;
+      e.preventDefault();
+      const done = await updateBranch(form.dataset.name, {
+        namaBaru: form.querySelector('.branch-edit__name').value,
+        entitas: form.querySelector('.branch-edit__ent').value,
+      });
+      if (done) branchEditing = null;
+      if (els.branchModal.open) renderBranchModal();
+    });
+    els.bShowInactive.addEventListener('change', renderBranchModal);
+    els.branchModal.addEventListener('close', () => { branchEditing = null; branchOnCreated = null; });
+
+    // Bukti pembayaran
+    els.payForm.addEventListener('submit', savePay);
+    els.pClear.addEventListener('click', clearPay);
+    els.payModal.addEventListener('close', () => { if (!payBusy) payingId = null; });
+
+    // Rekap dana & pengaturan
+    els.btnFundsCSV.addEventListener('click', exportFundsCSV);
+    els.settingsForm.addEventListener('submit', saveSettingsForm);
+    els.sEmailOn.addEventListener('change', updateEmailFields);
+    els.sTest.addEventListener('click', sendTestEmail);
+
     // Tutup dialog saat klik di luar kartu
-    [els.eventModal, els.importModal, els.confirmModal, els.categoryModal].forEach((dlg) => {
+    [els.eventModal, els.importModal, els.confirmModal, els.categoryModal, els.branchModal, els.payModal, els.fundsModal, els.settingsModal].forEach((dlg) => {
       let downOnBackdrop = false;
       dlg.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === dlg; });
       dlg.addEventListener('click', (e) => {
@@ -2936,6 +3746,9 @@
     periode: HEADER_ALIASES.periode,
     catatan: HEADER_ALIASES.catatan,
     status: ['lunas', 'selesai', 'status', 'status_bayar'],
+    tglBayar: HEADER_ALIASES.tglBayar,
+    bukti: HEADER_ALIASES.bukti,
+    ketBayar: HEADER_ALIASES.ketBayar,
   };
   const SHEET_SYS = {
     id: 'id', dibuatOleh: 'dibuat_oleh', dibuatPada: 'dibuat_pada', diubahOleh: 'diubah_oleh', diubahPada: 'diubah_pada',
@@ -2943,12 +3756,14 @@
     catatanSistem: 'catatan_sistem',
   };
   const SEM_FIELDS = ['kategori', 'judul', 'tanggal', 'mulai', 'durasi', 'nominal', 'ppn', 'pph', 'catatan', 'cabang', 'unit',
-    'tahap', 'periodeMulai', 'periodeSelesai', 'selesai', 'extra', 'seriesId', 'sumber'];
+    'tahap', 'periodeMulai', 'periodeSelesai', 'selesai', 'extra', 'seriesId', 'sumber', 'tglBayar', 'buktiUrl', 'ketBayar'];
   const STAMP_FIELDS = ['dibuatOleh', 'dibuatPada', 'diubahOleh', 'diubahPada', 'selesaiOleh', 'selesaiPada'];
   const AKSI_LABEL = {
     tambah: 'menambahkan', ubah: 'mengubah', hapus: 'menghapus', pulihkan: 'memulihkan', centang: 'menandai lunas/selesai',
     batal_centang: 'membatalkan status', pindah: 'memindahkan', kategori_baru: 'membuat kategori',
     kategori_ubah: 'mengubah kategori', kategori_sembunyi: 'menyembunyikan kategori',
+    cabang_baru: 'menambahkan cabang', cabang_ubah: 'mengubah cabang', cabang_nonaktif: 'menonaktifkan cabang',
+    cabang_aktif: 'mengaktifkan cabang', pengaturan: 'mengubah pengaturan',
   };
 
   /* ---------- Hak akses ---------- */
@@ -3115,10 +3930,16 @@
     if (periode === false) { res.problems.push(`Masa sewa "${pRaw}" tidak terbaca`); periode = null; }
     const extra = m.extras.map((x) => ({ label: x.label, value: String(cells[x.idx] ?? '').trim() })).filter((x) => x.value);
     const selesai = parseStatus(get('status'));
+    const tbRaw = get('tglBayar');
+    const tb = tbRaw ? parseDateTime(tbRaw) : null;
+    if (tbRaw && !tb) res.problems.push(`Tanggal bayar "${tbRaw}" tidak terbaca`);
+    const buktiRaw = get('bukti');
+    if (buktiRaw && !cleanUrl(buktiRaw)) res.problems.push('Bukti bayar harus berupa link http(s)');
 
     res.ev = normalizeEvent({
       id: res.id, kategori: key, judul, tanggal: dt.date, mulai, durasi, nominal, ppn, pph, catatan: tx.rest, cabang, unit, tahap,
       periodeMulai: periode ? periode.mulai : '', periodeSelesai: periode ? periode.selesai : '', extra, selesai,
+      tglBayar: tb ? tb.date : '', buktiUrl: buktiRaw, ketBayar: get('ketBayar'),
       selesaiPada: selesai ? (sys('selesaiPada') || null) : null, selesaiOleh: sys('selesaiOleh'),
       dibuatOleh: sys('dibuatOleh'), dibuatPada: sys('dibuatPada'), diubahOleh: sys('diubahOleh'), diubahPada: sys('diubahPada'),
       seriesId: sys('seriesId') || null, sumber: sys('sumber') || 'manual', dibuat: sys('dibuatPada') || '',
@@ -3177,6 +3998,9 @@
       put(H('periode'), template === 'sewa' ? 'Durasi_Sewa' : 'Masa_Sewa', text);
     }
     if (changed(['selesai'])) put(H('status'), CATEGORIES[ev.kategori].payment ? 'Lunas' : 'Selesai', { b: Boolean(ev.selesai) });
+    if (changed(['tglBayar'])) put(H('tglBayar'), 'Tgl_Bayar', ev.tglBayar ? { d: ev.tglBayar } : '');
+    if (changed(['buktiUrl'])) put(H('bukti'), 'Bukti_Bayar', ev.buktiUrl);
+    if (changed(['ketBayar'])) put(H('ketBayar'), 'Keterangan_Bayar', ev.ketBayar);
     if (changed(['extra'])) {
       const labels = new Set([...(prev ? prev.extra : []), ...ev.extra].map((x) => x.label));
       labels.forEach((label) => {
@@ -3211,6 +4035,7 @@
       throw e;
     }
     if (!data.ok) {
+      if (data.error === 'Aksi tidak dikenal.') data.error = 'Fitur ini butuh Apps Script versi terbaru. Admin perlu menempel Code.gs terbaru di editor Apps Script, menjalankan siapkanSheet, lalu Deploy sebagai versi baru.';
       const e = new Error(data.error || 'Permintaan ke Google Sheet gagal.');
       e.code = data.code || 'server';
       throw e;
@@ -3334,11 +4159,14 @@
     if (!fromCache && (SYNC.busy || SYNC.dirty)) { SYNC.hash = null; return false; }
     if (data.me) SYNC.me = { ...(SYNC.me || {}), ...data.me };
     SYNC.hash = data.hash || null;
+    SYNC.apiVersion = Number(data.apiVersion) || 1;
     SYNC.settings = data.settings || {};
     SYNC.users = {};
     (data.users || []).forEach((u) => { if (u.name) SYNC.users[u.email] = u.name; });
     SYNC.history = data.history || [];
     REMINDER_DAYS = clamp(Number(SYNC.settings.hari_pengingat) || 30, 1, 365);
+    SEWA_REMINDER_DAYS = clamp(Number(SYNC.settings.hari_pengingat_sewa) || 90, 1, 365);
+    setBranches(data.branches || []);
     applyCategories(data.categories || [], data.tabs || []);
 
     SYNC.tabs = {};
@@ -3474,6 +4302,7 @@
     SYNC.map = new Map();
     SYNC.history = [];
     SYNC.invalid = [];
+    setBranches([]);
     storageRemove(SESSION_KEY);
     storageRemove(CACHE_KEY);
     state.events = [];
@@ -3494,6 +4323,9 @@
       SYNC.lastSync = new Date();
       setSyncStatus('ok');
       startupReminderToast();
+      if (isAdmin() && SYNC.apiVersion < 2) {
+        toast('Apps Script belum versi terbaru: Kelola cabang, unggah bukti, dan email pengingat belum aktif.', { action: 'Lihat', timeout: 10000, onAction: () => openRight('activity') });
+      }
     } catch (err) {
       handleApiError(err, 'load');
     } finally {
@@ -3533,6 +4365,7 @@
     els.btnSample.hidden = sync;
     els.btnClearSample.hidden = sync;
     els.btnClear.hidden = sync;
+    els.btnSettings.hidden = !isAdmin() || (sync && !logged);
     els.btnMigrate.hidden = !(sync && logged && canCreate() && migratable.length > 0);
     if (!els.btnMigrate.hidden) els.btnMigrate.textContent = `Kirim ${migratable.length} jadwal dari browser ini ke Sheet`;
     els.syncStatus.hidden = !(sync && logged);
@@ -3544,6 +4377,10 @@
   function renderActivity() {
     if (!SYNC.on || !els.panelActivity) return;
     let html = '';
+    if (isAdmin() && SYNC.session && SYNC.apiVersion && SYNC.apiVersion < 2) {
+      html += '<div class="sync-warn"><strong>Apps Script belum diperbarui</strong>'
+        + '<span>Kelola cabang, unggah bukti bayar, dan email pengingat baru aktif setelah Code.gs terbaru ditempel di editor Apps Script, fungsi siapkanSheet dijalankan, lalu Deploy sebagai versi baru (Manage deployments → New version).</span></div>';
+    }
     if (isAdmin() && SYNC.invalid.length) {
       html += '<div class="sync-warn">'
         + `<strong>${SYNC.invalid.length} baris di Google Sheet belum tampil</strong>`
@@ -3707,10 +4544,17 @@
       'periodPicker', 'dayPopover', 'toasts', 'userPopover', 'syncStatus', 'syncText', 'btnUser', 'userInitial',
       'loginScreen', 'loginButton', 'loginStatus', 'loginError', 'tabActivity', 'panelActivity', 'btnAddCategory',
       'btnMigrate', 'cSave', 'sewaFields', 'taxRow', 'fCabang', 'fUnit', 'fTahap', 'fPeriodeMulai',
-      'fPeriodeSelesai', 'fPPN', 'fPPh', 'cabangList', 'importColumns', 'importKategori', 'importKategoriHint',
+      'fPeriodeSelesai', 'fPPN', 'fPPh', 'fCabangHint', 'importColumns', 'importKategori', 'importKategoriHint',
       'importSimilarWrap', 'importSimilar', 'importSimilarLabel', 'importPastWrap', 'importPast', 'importPastLabel',
       'importModeWrap', 'importModeHint', 'importSamplesWrap', 'importSamples', 'importSamplesLabel', 'btnClearSample',
       'categoryModal', 'categoryForm', 'categoryModalTitle', 'cName', 'cColors', 'cPayment', 'cDelete', 'cError',
+      'branchSection', 'branchFilter', 'btnManageBranch', 'branchModal', 'branchModalTitle', 'branchAddForm', 'bName',
+      'bEntitas', 'bError', 'entitasList', 'branchCount', 'bShowInactive', 'bShowInactiveWrap', 'branchList',
+      'fundsSummary', 'fundsModal', 'fundsNote', 'fundsKpis', 'fundsMonths', 'fundsBranches', 'btnFundsCSV',
+      'payModal', 'payForm', 'payFor', 'pTanggal', 'pFileWrap', 'pFile', 'pLinkLabel', 'pLink', 'pCurrent', 'pLocalNote',
+      'pKet', 'pLunas', 'pError', 'pClear', 'pSave',
+      'settingsModal', 'settingsForm', 'sDays', 'sSewaDays', 'sEmailWrap', 'sLocalNote', 'sEmailOn', 'sEmailTo',
+      'sEmailHour', 'sTest', 'sError', 'sSave', 'btnSettings',
     ].forEach((id) => { els[id] = document.getElementById(id); });
   }
 
@@ -3728,6 +4572,7 @@
       const stored = loadEvents();
       firstVisit = stored === null;
       state.events = firstVisit ? sampleEvents() : stored;
+      loadBranchesLocal();
       if (firstVisit) saveEvents();
     }
 

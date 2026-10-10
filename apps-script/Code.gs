@@ -6,9 +6,12 @@
    1. Buka Google Sheet kalender > Extensions > Apps Script.
    2. Hapus isi Code.gs bawaan, tempel SELURUH isi file ini.
    3. Isi CONFIG.GOOGLE_CLIENT_ID di bawah, lalu klik Save.
-   4. Deploy > New deployment > Web app
+   4. Pilih fungsi siapkanSheet > Run, lalu izinkan semua akses yang diminta
+      (Sheet, Drive untuk bukti bayar, Gmail untuk email pengingat, pemicu terjadwal).
+   5. Deploy > New deployment > Web app
       Execute as: Me | Who has access: Anyone > Deploy.
-   5. Salin URL Web App (berakhiran /exec) ke config.js aplikasi.
+      (Memperbarui skrip: Deploy > Manage deployments > pensil > New version > Deploy.)
+   6. Salin URL Web App (berakhiran /exec) ke config.js aplikasi.
    ============================================================= */
 
 const CONFIG = {
@@ -16,9 +19,14 @@ const CONFIG = {
   GOOGLE_CLIENT_ID: '174841001822-mvoga9p4jmlmuiar3rfd7suh6vb0uh1e.apps.googleusercontent.com',
   SESSION_DAYS: 30,       // lama login tersimpan di perangkat
   HISTORY_LIMIT: 60,      // jumlah aktivitas terbaru yang dikirim ke kalender
+  CALENDAR_URL: 'https://financewmcenter.github.io/kalender-jadwal/',  // tautan di email pengingat
+  BUKTI_FOLDER: 'Bukti Bayar Kalender',   // folder Google Drive untuk file bukti bayar
+  BUKTI_MAX_MB: 10,                       // ukuran maksimal satu file bukti bayar
+  CABANG_AWAL: ['Sunter'],                // cabang yang ditambahkan sekali saat pembaruan ini dipasang
 };
 
 /* ---------- Struktur ---------- */
+const API_VERSION = 2;   // 2 = cabang, bukti bayar, email pengingat, pengaturan
 const BASE_SYS = ['ID', 'Dibuat_Oleh', 'Dibuat_Pada', 'Diubah_Oleh', 'Diubah_Pada', 'Dihapus'];
 const EXTRA_SYS = ['Selesai_Oleh', 'Selesai_Pada', 'Seri_ID', 'Sumber', 'Catatan_Sistem'];
 const SYS_NORM = BASE_SYS.concat(EXTRA_SYS).map(norm);
@@ -40,12 +48,40 @@ const PALETTE = ['teal', 'pink', 'orange', 'indigo', 'cyan', 'lime', 'sand', 'sl
 const ALL_COLORS = PALETTE.concat(['coral', 'gold', 'blue', 'purple']);
 const STATUS_ALIASES = ['lunas', 'selesai', 'status', 'status_bayar'];
 const NOMINAL_ALIASES = ['nominal_idr', 'nominal', 'jumlah', 'amount', 'idr', 'nilai', 'dpp', 'harga_sewa', 'biaya'];
+// Nama kolom yang dikenali (sama dengan app.js)
+const FIELD_ALIASES = {
+  judul: ['nama_kegiatan', 'judul', 'nama', 'kegiatan', 'nama_event', 'event', 'title', 'uraian'],
+  tanggal: ['tanggal_jatuh_tempo', 'jatuh_tempo', 'tgl_jatuh_tempo', 'tanggal_bayar', 'tanggal', 'tgl', 'due_date', 'date'],
+  cabang: ['cabang', 'lokasi', 'branch', 'outlet', 'site', 'klinik'],
+  unit: ['sub_unit', 'subunit', 'unit', 'gedung', 'lantai', 'entitas', 'pt'],
+  tahap: ['term_tahap', 'term', 'tahap', 'termin', 'pembayaran_ke'],
+  jam: ['jam_mulai', 'mulai', 'jam', 'waktu', 'waktu_mulai'],
+  tglBayar: ['tgl_bayar', 'tanggal_dibayar', 'tgl_dibayar', 'paid_date', 'tanggal_pembayaran'],
+  bukti: ['bukti_bayar', 'bukti', 'link_bukti', 'bukti_pembayaran', 'link_bayar'],
+  ketBayar: ['keterangan_bayar', 'ket_bayar', 'catatan_bayar'],
+};
+// Kolom bukti bayar boleh diisi oleh siapa pun yang boleh mencentang Lunas
+const PROOF_ALIASES = FIELD_ALIASES.tglBayar.concat(FIELD_ALIASES.bukti, FIELD_ALIASES.ketBayar);
 const SYS_TABS = {
   _Kategori: ['Nama_Tab', 'Jenis', 'Warna', 'Tampilkan'],
+  _Cabang: ['Nama_Cabang', 'Entitas', 'Aktif', 'Keterangan'],
   _Pengguna: ['Email', 'Nama', 'Peran', 'Aktif'],
   _Riwayat: ['Waktu', 'Email', 'Aksi', 'Tab', 'ID', 'Nama_Kegiatan', 'Perubahan'],
   _Pengaturan: ['Kunci', 'Nilai', 'Keterangan'],
 };
+// Isi awal tab _Pengaturan (baris yang belum ada ditambahkan otomatis, nilai yang sudah ada tidak diubah)
+const SETTING_ROWS = [
+  ['mode_akses', 'daftar_email', 'daftar_email = hanya email di tab _Pengguna; domain = semua email domain_kantor'],
+  ['domain_kantor', '', 'Domain email kantor untuk mode_akses = domain, mis. wmcenter.id'],
+  ['peran_default_domain', 'Kontributor', 'Peran untuk email domain yang tidak tercantum di _Pengguna'],
+  ['kontributor_boleh_centang', true, 'TRUE = Kontributor boleh mencentang Lunas/Selesai dan mencatat bukti bayar jadwal milik orang lain'],
+  ['interval_sinkron_detik', 20, 'Seberapa sering kalender membaca perubahan dari Sheet (10–300 detik)'],
+  ['hari_pengingat', 30, 'Pengingat di kalender mulai H-berapa (semua kategori)'],
+  ['hari_pengingat_sewa', 90, 'Pengingat awal khusus Pembayaran Sewa Kantor, mulai H-berapa'],
+  ['email_pengingat', false, 'TRUE = kirim email ringkasan pengingat setiap hari'],
+  ['email_penerima', '', 'Alamat email penerima, pisahkan dengan koma. Kosong = pemilik spreadsheet'],
+  ['jam_email', 7, 'Jam kirim email pengingat (0–23, zona waktu spreadsheet)'],
+];
 
 /* =============================================================
    ENDPOINT
@@ -53,9 +89,20 @@ const SYS_TABS = {
 /* Jalankan sekali dari editor Apps Script (pilih siapkanSheet > Run) untuk menyiapkan
    tab-tab di spreadsheet kosong sekaligus memberi izin akses. Aman dijalankan berulang. */
 function siapkanSheet() {
-  const ctx = context();
+  let ctx = context();
   withLock(function () { ensureStructure(ctx); });
-  return 'Spreadsheet siap: ' + ctx.ss.getSheets().map(function (sh) { return sh.getName(); }).join(', ');
+  ctx = context();
+  const pemicu = installReminderTrigger(ctx);
+  const msg = 'Spreadsheet siap: ' + ctx.ss.getSheets().map(function (sh) { return sh.getName(); }).join(', ') + '. ' + pemicu;
+  Logger.log(msg);
+  return msg;
+}
+
+/* Jalankan dari editor bila ingin mengatur ulang jadwal email pengingat sesuai tab _Pengaturan. */
+function aturPengingatEmail() {
+  const msg = installReminderTrigger(context());
+  Logger.log(msg);
+  return msg;
 }
 
 function doGet() {
@@ -81,6 +128,10 @@ function doPost(e) {
     if (action === 'save') return json(save(user, body.ops));
     if (action === 'category') return json(category(user, body));
     if (action === 'notes') return json(notes(user, body.notes));
+    if (action === 'branch') return json(branch(user, body));
+    if (action === 'settings') return json(saveSettings(user, body.settings));
+    if (action === 'test_email') return json(testEmail(user));
+    if (action === 'upload') return json(uploadProof(user, body));
     return json({ ok: false, code: 'invalid', error: 'Aksi tidak dikenal.' });
   } catch (err) {
     if (err && err.code) return json({ ok: false, code: err.code, error: err.message });
@@ -180,7 +231,8 @@ function normRole(v) {
 }
 
 function readSettings(ss, tz) {
-  const out = { mode_akses: 'daftar_email', domain_kantor: '', peran_default_domain: 'Kontributor', kontributor_boleh_centang: true, interval_sinkron_detik: 20, hari_pengingat: 30 };
+  const out = {};
+  SETTING_ROWS.forEach(function (r) { out[r[0]] = r[1]; });
   const sh = ss.getSheetByName('_Pengaturan');
   if (!sh) return out;
   const t = readSheet(sh, tz);
@@ -194,6 +246,46 @@ function readSettings(ss, tz) {
   out.kontributor_boleh_centang = toBool(out.kontributor_boleh_centang, true);
   out.interval_sinkron_detik = Math.min(300, Math.max(10, Number(out.interval_sinkron_detik) || 20));
   out.hari_pengingat = Math.min(365, Math.max(1, Number(out.hari_pengingat) || 30));
+  out.hari_pengingat_sewa = Math.min(365, Math.max(1, Number(out.hari_pengingat_sewa) || 90));
+  out.email_pengingat = toBool(out.email_pengingat, false);
+  out.email_penerima = parseEmails(out.email_penerima).join(', ');
+  const jam = Number(out.jam_email);
+  out.jam_email = isFinite(jam) && String(out.jam_email).trim() !== '' ? Math.min(23, Math.max(0, Math.round(jam))) : 7;
+  return out;
+}
+
+function parseEmails(v) {
+  const seen = {};
+  return String(v == null ? '' : v).split(/[\s,;]+/).map(function (s) { return s.trim().toLowerCase(); })
+    .filter(function (s) {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) || seen[s]) return false;
+      seen[s] = true;
+      return true;
+    });
+}
+
+/* Daftar cabang dari tab _Cabang */
+function readBranches(ss, tz) {
+  const sh = ss.getSheetByName('_Cabang');
+  if (!sh) return [];
+  const t = readSheet(sh, tz);
+  const ni = findCol(t.headers, ['nama_cabang', 'cabang', 'nama']);
+  const ei = findCol(t.headers, ['entitas', 'pt']);
+  const ai = findCol(t.headers, ['aktif', 'active']);
+  const ki = findCol(t.headers, ['keterangan', 'catatan']);
+  if (ni < 0) return [];
+  const out = [];
+  t.values.forEach(function (r, i) {
+    const nama = String(r[ni] == null ? '' : r[ni]).trim();
+    if (!nama) return;
+    out.push({
+      nama: nama,
+      entitas: ei >= 0 ? String(r[ei] == null ? '' : r[ei]).trim() : '',
+      aktif: ai >= 0 ? toBool(r[ai], true) : true,
+      keterangan: ki >= 0 ? String(r[ki] == null ? '' : r[ki]).trim() : '',
+      n: i + 2,
+    });
+  });
   return out;
 }
 
@@ -247,16 +339,30 @@ function readAll(ctx) {
     };
   }).filter(function (c) { return c.tab; });
 
+  const used = {};
   const tabs = categorySheets(ss).map(function (sh) {
     const t = readSheet(sh, tz);
     const rows = [];
+    const ci = findCol(t.headers, FIELD_ALIASES.cabang);
+    const di = colOf(t.headers, 'Dihapus');
     t.values.forEach(function (r, i) {
       const cells = rowCells(t, i, tz);
       if (isBlankRow(cells, t.headers)) return;
       rows.push({ n: i + 2, cells: cells, rev: rowRev(cells, t.headers) });
+      if (ci >= 0 && cells[ci] && !(di >= 0 && toBool(cells[di], false)) && !used[normName(cells[ci])]) used[normName(cells[ci])] = cells[ci];
     });
     return { name: sh.getName(), headers: t.headers, rows: rows };
   });
+
+  // Cabang yang dipakai di data tetapi belum ada di _Cabang otomatis didaftarkan
+  let branches = readBranches(ss, tz);
+  const known = {};
+  branches.forEach(function (b) { known[normName(b.nama)] = true; });
+  const missing = Object.keys(used).filter(function (k) { return !known[k]; }).map(function (k) { return used[k]; });
+  if (missing.length) {
+    withLock(function () { registerBranches(ss, tz, missing); });
+    branches = readBranches(ss, tz);
+  }
 
   const h = readSheet(ss.getSheetByName('_Riwayat'), tz);
   const col = function (name) { return colOf(h.headers, name); };
@@ -268,10 +374,17 @@ function readAll(ctx) {
     history.push({ waktu: pick(c, 'Waktu'), email: pick(c, 'Email'), aksi: pick(c, 'Aksi'), tab: pick(c, 'Tab'), id: pick(c, 'ID'), judul: pick(c, 'Nama_Kegiatan'), perubahan: pick(c, 'Perubahan') });
   }
 
+  const st = ctx.settings;
   return {
+    apiVersion: API_VERSION,
     tz: tz,
-    settings: { kontributor_boleh_centang: ctx.settings.kontributor_boleh_centang, interval_sinkron_detik: ctx.settings.interval_sinkron_detik, hari_pengingat: ctx.settings.hari_pengingat },
+    settings: {
+      kontributor_boleh_centang: st.kontributor_boleh_centang, interval_sinkron_detik: st.interval_sinkron_detik,
+      hari_pengingat: st.hari_pengingat, hari_pengingat_sewa: st.hari_pengingat_sewa,
+      email_pengingat: st.email_pengingat, email_penerima: st.email_penerima, jam_email: st.jam_email,
+    },
     categories: categories,
+    branches: branches.map(function (b) { return { nama: b.nama, entitas: b.entitas, aktif: b.aktif, keterangan: b.keterangan }; }),
     tabs: tabs,
     history: history,
     users: ctx.users.filter(function (u) { return u.active; }).map(function (u) { return { email: u.email, name: u.name }; }),
@@ -284,6 +397,8 @@ function ensureStructure(ctx) {
   const ss = ctx.ss;
   Object.keys(SYS_TABS).forEach(function (name) { ensureSheet(ss, name, SYS_TABS[name]); });
   firstSetup(ss);
+  ensureSettingRows(ss, ctx.tz);
+  seedBranches(ss, ctx.tz);
   const katSh = ss.getSheetByName('_Kategori');
   const kat = readSheet(katSh, ctx.tz);
   const ni = findCol(kat.headers, ['nama_tab', 'nama', 'tab']);
@@ -334,6 +449,60 @@ function firstSetup(ss) {
     if (blank && /^(sheet|lembar)\s*\d*$/i.test(sh.getName()) && ss.getSheets().length > 1) ss.deleteSheet(sh);
   });
   props.setProperty('setup_done', '1');
+}
+
+/* Lengkapi baris pengaturan yang belum ada di tab _Pengaturan (nilai yang sudah diisi tidak diubah) */
+function ensureSettingRows(ss, tz) {
+  const sh = ss.getSheetByName('_Pengaturan');
+  if (!sh) return;
+  const t = readSheet(sh, tz);
+  const ki = findCol(t.headers, ['kunci', 'key']);
+  if (ki < 0) return;
+  const have = {};
+  t.values.forEach(function (r) { have[String(r[ki]).trim()] = true; });
+  const add = SETTING_ROWS.filter(function (r) { return !have[r[0]]; });
+  if (!add.length) return;
+  const width = Math.max(3, t.headers.length);
+  appendRows(sh, add.map(function (r) {
+    const row = t.headers.map(function () { return ''; });
+    while (row.length < width) row.push('');
+    row[ki] = r[0];
+    const vi = findCol(t.headers, ['nilai', 'value']);
+    const di = findCol(t.headers, ['keterangan', 'description']);
+    row[vi >= 0 ? vi : 1] = r[1];
+    row[di >= 0 ? di : 2] = r[2];
+    return row;
+  }), tz);
+}
+
+/* Cabang awal (CONFIG.CABANG_AWAL) ditambahkan sekali saja */
+function seedBranches(ss, tz) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('cabang_awal_done') === '1') return;
+  registerBranches(ss, tz, CONFIG.CABANG_AWAL || []);
+  props.setProperty('cabang_awal_done', '1');
+}
+
+/* Menambahkan nama cabang yang belum terdaftar ke tab _Cabang (dipanggil di dalam withLock) */
+function registerBranches(ss, tz, names) {
+  const sh = ensureSheet(ss, '_Cabang', SYS_TABS._Cabang);
+  const have = {};
+  readBranches(ss, tz).forEach(function (b) { have[normName(b.nama)] = true; });
+  const headers = headerRow(sh);
+  const ni = findCol(headers, ['nama_cabang', 'cabang', 'nama']);
+  const ai = findCol(headers, ['aktif', 'active']);
+  const rows = [];
+  (names || []).forEach(function (n) {
+    const nama = String(n == null ? '' : n).trim().replace(/\s+/g, ' ');
+    if (!nama || have[normName(nama)]) return;
+    have[normName(nama)] = true;
+    const row = headers.map(function () { return ''; });
+    row[ni >= 0 ? ni : 0] = nama;
+    if (ai >= 0) row[ai] = true;
+    rows.push(row);
+  });
+  if (rows.length) appendRows(sh, rows, tz);
+  return rows.length;
 }
 
 /* ID untuk baris yang ditambah langsung di Sheet (dan pengganti ID ganda karena salin-tempel) */
@@ -540,8 +709,10 @@ function checkPermission(user, ex, op) {
   const owner = String(oc >= 0 ? ex.cells[oc] : '').trim().toLowerCase() || user.ctx.owner;
   if (owner === user.email) return;
   if (op.type === 'upsert' && op.tab === ex.tab && user.ctx.settings.kontributor_boleh_centang) {
+    // Status Lunas/Selesai dan bukti bayar boleh diisi untuk jadwal milik orang lain
     const keys = Object.keys(op.cells || {});
-    if (keys.length && keys.every(function (k) { return STATUS_ALIASES.indexOf(norm(k)) >= 0; })) return;
+    const allowed = function (k) { return STATUS_ALIASES.indexOf(norm(k)) >= 0 || PROOF_ALIASES.indexOf(norm(k)) >= 0; };
+    if (keys.length && keys.every(allowed)) return;
   }
   fail('forbidden', 'Anda hanya dapat mengubah atau menghapus jadwal yang Anda buat sendiri.');
 }
@@ -657,6 +828,432 @@ function upsertKategori(ss, tabName, fields, tz) {
     n = lastDataRow(sh, tz);
   }
   Object.keys(fields).forEach(function (k) { setCell(sh, n, headers, k, fields[k]); });
+}
+
+/* =============================================================
+   CABANG (tab _Cabang)
+   ============================================================= */
+function branch(user, body) {
+  if (user.role !== 'Admin') fail('forbidden', 'Hanya Admin yang dapat menambah atau mengubah cabang.');
+  const op = String(body.op || '');
+  return withLock(function () {
+    const ss = user.ctx.ss;
+    const tz = user.ctx.tz;
+    const now = new Date();
+    const sh = ensureSheet(ss, '_Cabang', SYS_TABS._Cabang);
+    addHeaders(sh, SYS_TABS._Cabang, true);
+    const headers = headerRow(sh);
+    const list = readBranches(ss, tz);
+    const find = function (n) { return list.filter(function (b) { return normName(b.nama) === normName(n); })[0] || null; };
+    const log = function (aksi, nama, detail) { appendRows(ss.getSheetByName('_Riwayat'), [[now, user.email, aksi, '_Cabang', '', nama, detail || '']], tz, true); };
+    const entitas = String(body.entitas == null ? '' : body.entitas).trim().slice(0, 60);
+
+    if (op === 'create') {
+      const nama = validateBranchName(body.nama);
+      if (find(nama)) fail('invalid', 'Cabang "' + nama + '" sudah ada di daftar.');
+      const row = headers.map(function () { return ''; });
+      row[colOf(headers, 'Nama_Cabang')] = nama;
+      row[colOf(headers, 'Entitas')] = entitas;
+      row[colOf(headers, 'Aktif')] = true;
+      appendRows(sh, [row], tz);
+      log('cabang_baru', nama, entitas ? 'Entitas: ' + entitas : '');
+      return { ok: true, nama: nama };
+    }
+
+    if (op === 'update') {
+      const b = find(body.nama);
+      if (!b) fail('invalid', 'Cabang "' + body.nama + '" tidak ditemukan. Muat ulang data lalu coba lagi.');
+      const namaBaru = validateBranchName(body.namaBaru == null ? b.nama : body.namaBaru);
+      const other = find(namaBaru);
+      if (other && other.n !== b.n) fail('invalid', 'Cabang "' + namaBaru + '" sudah ada di daftar.');
+      const aktif = body.aktif === undefined ? b.aktif : Boolean(body.aktif);
+      const changes = [];
+      if (namaBaru !== b.nama) { setCell(sh, b.n, headers, 'Nama_Cabang', namaBaru); changes.push('Nama: ' + b.nama + ' → ' + namaBaru); }
+      if (entitas !== b.entitas) { setCell(sh, b.n, headers, 'Entitas', entitas); changes.push('Entitas: ' + short(b.entitas) + ' → ' + short(entitas)); }
+      if (aktif !== b.aktif) { setCell(sh, b.n, headers, 'Aktif', aktif); changes.push(aktif ? 'Diaktifkan' : 'Dinonaktifkan'); }
+      let renamed = 0;
+      if (namaBaru !== b.nama) renamed = renameBranchInData(ss, tz, b.nama, namaBaru, user.email, now);
+      if (renamed) changes.push(renamed + ' jadwal ikut diperbarui');
+      if (changes.length) {
+        const aksi = namaBaru !== b.nama || entitas !== b.entitas ? 'cabang_ubah' : (aktif ? 'cabang_aktif' : 'cabang_nonaktif');
+        log(aksi, namaBaru, changes.join('; '));
+      }
+      return { ok: true, nama: namaBaru, renamed: renamed };
+    }
+    fail('invalid', 'Aksi cabang tidak dikenal.');
+  });
+}
+
+function validateBranchName(v) {
+  const nama = String(v == null ? '' : v).trim().replace(/\s+/g, ' ');
+  if (!nama) fail('invalid', 'Nama cabang wajib diisi.');
+  if (nama.length > 60) fail('invalid', 'Nama cabang maksimal 60 karakter.');
+  if (/^[=+\-@]/.test(nama)) fail('invalid', 'Nama cabang tidak boleh diawali tanda = + - @');
+  return nama;
+}
+
+/* Ganti nama cabang di semua tab kategori; mengembalikan jumlah baris yang berubah */
+function renameBranchInData(ss, tz, oldName, newName, email, now) {
+  let count = 0;
+  categorySheets(ss).forEach(function (sh) {
+    const t = readSheet(sh, tz);
+    const ci = findCol(t.headers, FIELD_ALIASES.cabang);
+    if (ci < 0 || !t.values.length) return;
+    const hit = [];
+    t.values.forEach(function (r, i) { if (normName(r[ci]) === normName(oldName)) hit.push(i + 2); });
+    if (!hit.length) return;
+    addHeaders(sh, BASE_SYS, true);
+    const headers = headerRow(sh);
+    hit.forEach(function (n) {
+      sh.getRange(n, ci + 1).setValue(newName);
+      stamp(sh, n, headers, email, now);
+    });
+    count += hit.length;
+  });
+  return count;
+}
+
+/* =============================================================
+   PENGATURAN PENGINGAT & EMAIL
+   ============================================================= */
+function saveSettings(user, input) {
+  if (user.role !== 'Admin') fail('forbidden', 'Hanya Admin yang dapat mengubah pengaturan.');
+  const s = input || {};
+  const out = {};
+  if (s.hari_pengingat !== undefined) {
+    const v = Math.round(Number(s.hari_pengingat));
+    if (!(v >= 1 && v <= 365)) fail('invalid', 'Hari pengingat harus antara 1 dan 365.');
+    out.hari_pengingat = v;
+  }
+  if (s.hari_pengingat_sewa !== undefined) {
+    const v = Math.round(Number(s.hari_pengingat_sewa));
+    if (!(v >= 1 && v <= 365)) fail('invalid', 'Pengingat awal sewa harus antara 1 dan 365 hari.');
+    out.hari_pengingat_sewa = v;
+  }
+  if (s.email_pengingat !== undefined) out.email_pengingat = Boolean(s.email_pengingat);
+  if (s.email_penerima !== undefined) {
+    const bad = String(s.email_penerima || '').split(/[\s,;]+/).filter(function (x) { return x && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x); });
+    if (bad.length) fail('invalid', 'Alamat email penerima tidak valid: ' + bad.slice(0, 3).join(', ') + '. Pisahkan beberapa alamat dengan koma.');
+    out.email_penerima = parseEmails(s.email_penerima).join(', ');
+  }
+  if (s.jam_email !== undefined) {
+    const v = Math.round(Number(s.jam_email));
+    if (!(v >= 0 && v <= 23)) fail('invalid', 'Jam kirim email harus antara 0 dan 23.');
+    out.jam_email = v;
+  }
+  const result = withLock(function () {
+    const ss = user.ctx.ss;
+    const tz = user.ctx.tz;
+    ensureSettingRows(ss, tz);
+    const sh = ss.getSheetByName('_Pengaturan');
+    const t = readSheet(sh, tz);
+    const ki = findCol(t.headers, ['kunci', 'key']);
+    const vi = findCol(t.headers, ['nilai', 'value']);
+    const changes = [];
+    Object.keys(out).forEach(function (k) {
+      t.values.forEach(function (r, i) {
+        if (String(r[ki]).trim() !== k) return;
+        if (valueText(r[vi], tz) === valueText(out[k], tz)) return;
+        sh.getRange(i + 2, vi + 1).setValue(out[k]);
+        changes.push(k + ': ' + short(valueText(r[vi], tz)) + ' → ' + short(valueText(out[k], tz)));
+      });
+    });
+    if (changes.length) appendRows(ss.getSheetByName('_Riwayat'), [[new Date(), user.email, 'pengaturan', '_Pengaturan', '', 'Pengaturan pengingat', changes.join('; ')]], tz, true);
+    return changes.length;
+  });
+  const ctx = context();
+  let trigger = '';
+  try {
+    trigger = installReminderTrigger(ctx);
+  } catch (err) {
+    fail('server', 'Pengaturan tersimpan, tetapi jadwal email belum bisa dipasang: ' + String((err && err.message) || err)
+      + '. Buka editor Apps Script, jalankan fungsi siapkanSheet sekali, lalu izinkan aksesnya.');
+  }
+  return { ok: true, changed: result, trigger: trigger };
+}
+
+/* Memasang / memperbarui / mematikan pemicu harian sesuai pengaturan */
+function installReminderTrigger(ctx) {
+  const st = ctx.settings;
+  ScriptApp.getProjectTriggers().forEach(function (tr) {
+    if (tr.getHandlerFunction() === 'kirimPengingatHarian') ScriptApp.deleteTrigger(tr);
+  });
+  if (!st.email_pengingat) return 'Email pengingat harian nonaktif.';
+  ScriptApp.newTrigger('kirimPengingatHarian').timeBased().atHour(st.jam_email).everyDays(1).inTimezone(ctx.tz).create();
+  return 'Email pengingat dikirim setiap hari sekitar pukul ' + ('0' + st.jam_email).slice(-2) + '.00 ke ' + recipientsOf(ctx).join(', ') + '.';
+}
+
+function recipientsOf(ctx) {
+  const list = parseEmails(ctx.settings.email_penerima);
+  return list.length ? list : [ctx.owner];
+}
+
+/* Dijalankan oleh pemicu harian */
+function kirimPengingatHarian() {
+  const ctx = context();
+  if (!ctx.settings.email_pengingat) return 'Email pengingat nonaktif.';
+  try { syncProofFolderAccess(ctx); } catch (err) { /* akses folder bukti tidak menghalangi email */ }
+  const digest = buildDigest(ctx, new Date());
+  if (!digest.total) return 'Tidak ada jadwal yang perlu diingatkan hari ini.';
+  const to = recipientsOf(ctx);
+  MailApp.sendEmail({ to: to.join(','), subject: digest.subject, htmlBody: digest.html, body: digest.text, name: 'Kalender WM Center' });
+  return 'Email terkirim ke ' + to.join(', ') + '.';
+}
+
+function testEmail(user) {
+  if (user.role !== 'Admin') fail('forbidden', 'Hanya Admin yang dapat mengirim email uji.');
+  const ctx = user.ctx;
+  const digest = buildDigest(ctx, new Date());
+  const subject = '[Uji] ' + digest.subject;
+  const note = '<p style="margin:0 0 16px;padding:10px 12px;border-radius:10px;background:#E3EBFB;color:#1F4396;font-size:13px">'
+    + 'Ini email uji dari Kalender. Email harian yang sebenarnya dikirim ke: ' + esc(recipientsOf(ctx).join(', '))
+    + (ctx.settings.email_pengingat ? ', setiap hari sekitar pukul ' + ('0' + ctx.settings.jam_email).slice(-2) + '.00.' : ' (email harian saat ini nonaktif).') + '</p>';
+  const html = digest.total ? digest.html.replace('<!--NOTE-->', note) : digest.emptyHtml.replace('<!--NOTE-->', note);
+  MailApp.sendEmail({ to: user.email, subject: subject, htmlBody: html, body: digest.text, name: 'Kalender WM Center' });
+  return { ok: true, sentTo: user.email, count: digest.total };
+}
+
+/* Menyusun isi email: terlambat, hari ini, 7 hari ke depan, dan pengingat awal (H-14/H-30, sewa H-60/H-90) */
+function buildDigest(ctx, now) {
+  const ss = ctx.ss;
+  const tz = ctx.tz;
+  const st = ctx.settings;
+  const todayStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const today = isoDays(todayStr);
+  const sewaDays = st.hari_pengingat_sewa;
+  const early = [14, 30];
+  const earlySewa = [sewaDays, 60, 30, 14].filter(function (d, i, a) { return d > 7 && a.indexOf(d) === i; });
+
+  const kat = readSheet(ss.getSheetByName('_Kategori'), tz);
+  const kni = findCol(kat.headers, ['nama_tab', 'nama', 'tab']);
+  const kji = findCol(kat.headers, ['jenis']);
+  const kti = findCol(kat.headers, ['tampilkan', 'tampil', 'aktif']);
+  const meta = {};
+  kat.values.forEach(function (r) {
+    if (kni < 0) return;
+    meta[normName(r[kni])] = { jenis: kji >= 0 ? String(r[kji]).trim().toLowerCase() : '', tampil: kti >= 0 ? toBool(r[kti], true) : true };
+  });
+
+  const items = [];
+  categorySheets(ss).forEach(function (sh) {
+    const name = sh.getName();
+    const m = meta[normName(name)] || {};
+    if (m.tampil === false) return;
+    const t = readSheet(sh, tz);
+    const H = function (aliases) { return findCol(t.headers, aliases); };
+    const ti = H(FIELD_ALIASES.tanggal);
+    if (ti < 0) return;
+    const ji = H(FIELD_ALIASES.judul);
+    const ci = H(FIELD_ALIASES.cabang);
+    const ui = H(FIELD_ALIASES.unit);
+    const pi = H(FIELD_ALIASES.tahap);
+    const hi = H(FIELD_ALIASES.jam);
+    const ni = H(NOMINAL_ALIASES);
+    const si = H(STATUS_ALIASES);
+    const di = colOf(t.headers, 'Dihapus');
+    const isSewa = normName(name) === 'pembayaran sewa kantor';
+    const b = BUILTIN[normName(name)];
+    const payment = (m.jenis || (b && b.jenis) || (ni >= 0 ? 'pembayaran' : 'agenda')) === 'pembayaran';
+    t.values.forEach(function (r, i) {
+      const cells = rowCells(t, i, tz);
+      if (isBlankRow(cells, t.headers)) return;
+      if (di >= 0 && toBool(r[di], false)) return;
+      if (si >= 0 && isDoneValue(r[si])) return;
+      const iso = dateIso(r[ti], cells[ti], tz);
+      if (!iso) return;
+      const d = isoDays(iso) - today;
+      const milestone = (isSewa ? earlySewa : early).indexOf(d) >= 0;
+      if (!(d <= 7 || milestone)) return;
+      const cabang = ci >= 0 ? cells[ci] : '';
+      const unit = ui >= 0 ? cells[ui] : '';
+      const tahap = pi >= 0 ? cells[pi] : '';
+      let judul = ji >= 0 ? cells[ji] : '';
+      if (!judul) {
+        const loc = [cabang, unit].filter(String).join(' ');
+        judul = loc ? (isSewa ? 'Sewa ' : '') + loc : '';
+        if (tahap) judul = (judul || name) + ' – ' + tahap;
+      }
+      if (!judul) judul = name + ' (baris ' + (i + 2) + ')';
+      items.push({
+        d: d, iso: iso, judul: judul, kategori: name, payment: payment,
+        nominal: ni >= 0 ? amountOf(r[ni]) : 0, jam: hi >= 0 ? String(cells[hi] || '').slice(0, 5) : '',
+      });
+    });
+  });
+  items.sort(function (a, b) { return a.d - b.d || a.judul.localeCompare(b.judul); });
+
+  const groups = [
+    { key: 'late', title: 'Terlambat', color: '#B83A31', bg: '#FBE3E0', list: items.filter(function (x) { return x.d < 0; }) },
+    { key: 'today', title: 'Hari ini', color: '#A3570A', bg: '#FDEBD3', list: items.filter(function (x) { return x.d === 0; }) },
+    { key: 'week', title: '7 hari ke depan', color: '#7C5E00', bg: '#FBF0C9', list: items.filter(function (x) { return x.d >= 1 && x.d <= 7; }) },
+    { key: 'early', title: 'Pengingat awal', color: '#4F5868', bg: '#EDF0F5', list: items.filter(function (x) { return x.d > 7; }) },
+  ];
+  const total = items.length;
+  const fmtDay = function (iso) {
+    const p = iso.split('-');
+    const dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    return HARI[dt.getDay()] + ', ' + Number(p[2]) + ' ' + BULAN[Number(p[1]) - 1] + ' ' + p[0];
+  };
+  const rel = function (d) { return d === 0 ? 'Hari-H' : (d > 0 ? 'H-' + d : 'Terlambat ' + (-d) + ' hari'); };
+  const sum = function (list) { return list.reduce(function (s, x) { return s + (x.payment ? x.nominal : 0); }, 0); };
+
+  const parts = [];
+  if (groups[1].list.length) parts.push(groups[1].list.length + ' jatuh tempo hari ini');
+  if (groups[0].list.length) parts.push(groups[0].list.length + ' terlambat');
+  if (groups[2].list.length) parts.push(groups[2].list.length + ' dalam 7 hari');
+  if (!parts.length && groups[3].list.length) parts.push(groups[3].list.length + ' pengingat awal');
+  const subject = 'Pengingat jadwal: ' + (parts.join(', ') || 'tidak ada jadwal') + ' (' + fmtDay(todayStr) + ')';
+
+  const wrapStart = '<div style="font-family:Arial,Helvetica,sans-serif;color:#1E2430;max-width:680px;margin:0 auto">'
+    + '<h2 style="margin:0 0 4px;font-size:20px">Pengingat jadwal kalender</h2>'
+    + '<p style="margin:0 0 16px;color:#626A79;font-size:13px">' + esc(fmtDay(todayStr)) + '</p><!--NOTE-->';
+  const wrapEnd = '<p style="margin:24px 0 8px"><a href="' + esc(CONFIG.CALENDAR_URL) + '" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#3561C9;color:#FFFFFF;text-decoration:none;font-weight:bold;font-size:14px">Buka kalender</a></p>'
+    + '<p style="margin:16px 0 0;color:#9AA1AE;font-size:11.5px">Email otomatis dari Kalender WM Center. Ubah penerima atau jam kirim lewat Pengaturan pengingat di kalender (khusus Admin).</p></div>';
+
+  let html = wrapStart;
+  let text = subject + '\n';
+  groups.forEach(function (g) {
+    if (!g.list.length) return;
+    const tot = sum(g.list);
+    html += '<h3 style="margin:20px 0 8px;font-size:15px;color:' + g.color + '">' + g.title + ' (' + g.list.length + ')'
+      + (tot ? ' <span style="color:#626A79;font-weight:normal">· ' + idr(tot) + '</span>' : '') + '</h3>'
+      + '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px">';
+    text += '\n' + g.title + ' (' + g.list.length + ')\n';
+    g.list.slice(0, 50).forEach(function (x) {
+      html += '<tr>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #EDF0F5;white-space:nowrap;color:#626A79">' + esc(fmtDay(x.iso)) + (x.jam ? ', ' + esc(x.jam) : '') + '</td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #EDF0F5"><strong>' + esc(x.judul) + '</strong><br><span style="color:#9AA1AE;font-size:12px">' + esc(x.kategori) + '</span></td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #EDF0F5;text-align:right;white-space:nowrap">' + (x.payment && x.nominal ? idr(x.nominal) : '') + '</td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #EDF0F5;text-align:right;white-space:nowrap"><span style="padding:2px 8px;border-radius:999px;background:' + g.bg + ';color:' + g.color + ';font-size:11.5px;font-weight:bold">' + rel(x.d) + '</span></td>'
+        + '</tr>';
+      text += '- ' + fmtDay(x.iso) + ' · ' + x.judul + (x.payment && x.nominal ? ' · ' + idr(x.nominal) : '') + ' · ' + rel(x.d) + '\n';
+    });
+    if (g.list.length > 50) html += '<tr><td colspan="4" style="padding:8px 10px;color:#626A79">dan ' + (g.list.length - 50) + ' jadwal lainnya…</td></tr>';
+    html += '</table>';
+  });
+  html += wrapEnd;
+  text += '\nBuka kalender: ' + CONFIG.CALENDAR_URL + '\n';
+  const emptyHtml = wrapStart + '<p style="padding:14px;border-radius:12px;background:#DFEDE0;color:#3A6344">Tidak ada jadwal yang terlambat, jatuh tempo hari ini, atau dalam 7 hari ke depan. Email harian hanya dikirim bila ada jadwal yang perlu diingatkan.</p>' + wrapEnd;
+  return { total: total, subject: subject, html: html, text: text, emptyHtml: emptyHtml, groups: groups };
+}
+
+const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const BULAN_LOOKUP = { jan: 1, januari: 1, january: 1, feb: 2, februari: 2, pebruari: 2, february: 2, mar: 3, maret: 3, march: 3, apr: 4, april: 4, mei: 5, may: 5, jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7, agu: 8, agt: 8, agus: 8, agustus: 8, aug: 8, august: 8, sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, oct: 10, october: 10, nov: 11, nop: 11, nopember: 11, november: 11, des: 12, desember: 12, dec: 12, december: 12 };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+}
+function idr(n) { return 'Rp ' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function isoDays(iso) { const p = iso.split('-'); return Math.round(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])) / 86400000); }
+
+/* Tanggal sel -> yyyy-MM-dd (Date, 15/01/2026, 2026-01-15, 15 Okt 2026, dengan atau tanpa jam) */
+function dateIso(v, text, tz) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  const s = String(text || v || '').trim().replace(/^[a-z]+,\s*/i, '').replace(/[T\s]+\d{1,2}[:.]\d{2}(?::\d{2})?\s*(wib|wita|wit)?$/i, '').trim();
+  let y; let mo; let d; let m;
+  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.\s]+(\d{2,4})$/))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else if ((m = s.match(/^(\d{1,2})[\s-]+([a-z]+)\.?[\s-]+(\d{4})$/i))) { d = +m[1]; mo = BULAN_LOOKUP[m[2].toLowerCase()]; y = +m[3]; }
+  else return '';
+  if (!mo) return '';
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+  return y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+
+/* Nominal sel -> angka (134000000, "134,000,000", "Rp 4.750.000,00") */
+function amountOf(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  let s = String(v == null ? '' : v).toLowerCase().replace(/rp\.?|idr|\s/g, '');
+  if (!/^\d[\d.,]*$/.test(s)) return 0;
+  const last = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+  if (last >= 0 && s.length - last - 1 !== 3) s = s.slice(0, last).replace(/[.,]/g, '') + '.' + s.slice(last + 1);
+  else s = s.replace(/[.,]/g, '');
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+
+function isDoneValue(v) {
+  if (v === true) return true;
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s || /^(belum|tidak|no|false|0|pending|open|todo)/.test(s)) return false;
+  return /(selesai|lunas|done|sudah|paid|complete|ya|yes|true|1)/.test(s);
+}
+
+/* =============================================================
+   BUKTI BAYAR (file disimpan di Google Drive pemilik spreadsheet)
+   ============================================================= */
+const PROOF_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
+
+function uploadProof(user, body) {
+  if (user.role === 'Pembaca') fail('forbidden', 'Peran Pembaca tidak dapat mengunggah bukti bayar.');
+  const mime = String(body.mime || '').toLowerCase();
+  if (!PROOF_TYPES[mime]) fail('invalid', 'Format file belum didukung. Gunakan PDF, JPG, PNG, atau WEBP.');
+  const data = String(body.data || '').replace(/^data:[^,]*,/, '');
+  if (!data) fail('invalid', 'File kosong.');
+  const bytes = Utilities.base64Decode(data);
+  if (!bytes.length) fail('invalid', 'File kosong.');
+  if (bytes.length > CONFIG.BUKTI_MAX_MB * 1024 * 1024) fail('invalid', 'Ukuran file maksimal ' + CONFIG.BUKTI_MAX_MB + ' MB.');
+  const ctx = user.ctx;
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(body.tanggal || '')) ? String(body.tanggal) : Utilities.formatDate(new Date(), ctx.tz, 'yyyy-MM-dd');
+  const label = String(body.label || 'Bukti bayar').replace(/[\\/:*?"<>|#%\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const orig = String(body.name || ('bukti.' + PROOF_TYPES[mime])).replace(/[\\/:*?"<>|#%\r\n]+/g, ' ').trim().slice(0, 80);
+  const fileName = iso + ' - ' + label + ' - ' + orig;
+  // Folder dibuat di dalam kunci agar tidak tercipta ganda; file diunggah di luar kunci
+  const folders = withLock(function () {
+    const root = proofFolder(ctx);
+    const year = iso.slice(0, 4);
+    const subs = root.getFoldersByName(year);
+    return { root: root, year: subs.hasNext() ? subs.next() : root.createFolder(year) };
+  });
+  const file = folders.year.createFile(Utilities.newBlob(bytes, mime, fileName));
+  file.setDescription('Diunggah oleh ' + user.email + ' dari Kalender untuk: ' + label);
+  try { syncProofFolderAccess(ctx, folders.root); } catch (err) { /* akses folder bukan syarat unggah */ }
+  return { ok: true, url: file.getUrl(), name: file.getName(), id: file.getId() };
+}
+
+function proofFolder(ctx) {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('bukti_folder_id');
+  if (id) {
+    try {
+      const f = DriveApp.getFolderById(id);
+      if (!f.isTrashed()) return f;
+    } catch (err) { /* folder dihapus atau tidak bisa dibuka: buat baru */ }
+  }
+  let parent = null;
+  try {
+    const parents = DriveApp.getFileById(ctx.ss.getId()).getParents();
+    if (parents.hasNext()) parent = parents.next();
+  } catch (err) { parent = null; }
+  const folder = parent ? parent.createFolder(CONFIG.BUKTI_FOLDER) : DriveApp.createFolder(CONFIG.BUKTI_FOLDER);
+  folder.setDescription('Bukti bayar yang diunggah dari Kalender. Akses lihat diberikan otomatis ke pengguna aktif di tab _Pengguna.');
+  props.setProperty('bukti_folder_id', folder.getId());
+  return folder;
+}
+
+/* Pengguna aktif di _Pengguna mendapat akses lihat ke folder bukti bayar */
+function syncProofFolderAccess(ctx, folder) {
+  const props = PropertiesService.getScriptProperties();
+  if (!folder) {
+    const id = props.getProperty('bukti_folder_id');
+    if (!id) return 0;
+    folder = DriveApp.getFolderById(id);
+  }
+  const have = {};
+  folder.getViewers().concat(folder.getEditors()).forEach(function (u) { have[String(u.getEmail()).toLowerCase()] = true; });
+  have[ctx.owner] = true;
+  let added = 0;
+  ctx.users.forEach(function (u) {
+    if (!u.active || have[u.email]) return;
+    try { folder.addViewer(u.email); added++; } catch (err) { /* email bukan akun Google: lewati */ }
+  });
+  const dom = String(ctx.settings.domain_kantor || '').replace(/^@/, '').trim();
+  if (String(ctx.settings.mode_akses).toLowerCase() === 'domain' && dom) {
+    try { folder.setSharing(DriveApp.Access.DOMAIN, DriveApp.Permission.VIEW); } catch (err) { /* bukan akun Workspace */ }
+  }
+  return added;
 }
 
 /* =============================================================

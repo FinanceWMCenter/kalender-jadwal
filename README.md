@@ -37,12 +37,16 @@ Membuka `index.html` langsung dengan klik dua kali juga bisa, tetapi notifikasi 
 ## Fitur
 
 - Tampilan **Month / Week / Day**, tombol **Today**, panah navigasi, dan pemilih bulan-tahun.
-- Sidebar kiri yang bisa dilipat: tombol **Create** dan **Upload CSV**, kalender kecil, filter **My Calendars**, ringkasan tagihan bulan berjalan, dan menu kelola data.
-- Sidebar kanan yang bisa dilipat: tab **Pengingat** (H-30 sampai Hari-H, termasuk yang terlambat) dan tab **Detail** event.
+- Sidebar kiri yang bisa dilipat: tombol **Create** dan **Upload CSV**, kalender kecil, filter **My Calendars**, filter **Cabang**, ringkasan tagihan bulan berjalan, kartu **Kebutuhan dana**, dan menu kelola data.
+- Sidebar kanan yang bisa dilipat: tab **Pengingat** (H-30 sampai Hari-H, sewa mulai H-90, termasuk yang terlambat) dan tab **Detail** event.
+- **Kelola cabang**: daftar cabang resmi dengan entitas/PT, ganti nama sekaligus untuk semua jadwal, dan nonaktifkan cabang yang tutup.
+- **Bukti pembayaran**: catat tanggal bayar, unggah file bukti (mode Google Sheet) atau tempel link, dan keterangan transfer.
+- **Rekap kebutuhan dana**: total tagihan belum lunas 30/90/365 hari ke depan, per bulan, dan per cabang, bisa diunduh sebagai CSV.
+- **Email pengingat harian** (mode Google Sheet): ringkasan jadwal terlambat, hari ini, 7 hari ke depan, dan pengingat awal.
 - Checkbox di setiap event. Saat dicentang, status menjadi Selesai/Lunas, teks tercoret, dan warna berubah ke sage green. Status tersimpan permanen di `localStorage`.
 - Event berulang (mingguan, bulanan, tahunan). Tanggal 31 otomatis menyesuaikan ke akhir bulan pada bulan yang lebih pendek.
 - Seret event untuk memindahkan tanggal atau jam. Seret file CSV ke halaman untuk mengimpor.
-- Notifikasi browser opsional pada H-30, H-14, H-7, H-3, H-1, dan Hari-H.
+- Notifikasi browser opsional pada H-30, H-14, H-7, H-3, H-1, dan Hari-H (sewa juga H-90 dan H-60).
 - Ekspor semua data ke CSV sebagai cadangan, lalu impor kembali di browser atau perangkat lain.
 
 Pintasan keyboard: `T` hari ini, `M` `W` `D` ganti tampilan, `←` `→` geser periode, `C` buat event, `Esc` tutup popover.
@@ -67,6 +71,46 @@ Empat kategori bawaan selalu tersedia: Pembayaran Sewa Kantor, Pembayaran Rutin,
 
 Isian form menyesuaikan kategori: cabang, sub unit, tahap, dan masa sewa hanya muncul untuk Pembayaran Sewa Kantor; PPN/PPh hanya untuk kategori pembayaran.
 
+## Cabang
+
+Isian **Cabang** di form Create berupa pilihan dari daftar cabang, sehingga tidak ada salah ketik ("Sunter" dan "sunter " tidak lagi terbaca sebagai dua cabang).
+
+- **Kelola cabang** (sidebar kiri, khusus Admin): tambah cabang beserta entitas/PT, ubah nama atau entitas, dan nonaktifkan/aktifkan.
+- **Tambah cepat**: di form Create, pilih **+ Tambah cabang baru…** di isian Cabang. Cabang langsung dibuat dan terpilih tanpa menutup form.
+- **Ganti nama** memperbarui semua jadwal yang memakai cabang itu sekaligus. Judul otomatis seperti "Sewa Pemuda – Tahap 1" ikut berganti. Perubahan tercatat di riwayat.
+- **Nonaktifkan** untuk cabang yang tutup atau pindah: cabang hilang dari pilihan form, tetapi jadwal lamanya tetap ada dan tetap tampil.
+- **Filter cabang** di sidebar kiri menampilkan jadwal satu cabang saja. Ringkasan, pengingat, dan rekap dana ikut mengikuti filter ini.
+- Cabang baru dari **Upload CSV** atau baris yang diketik langsung di Google Sheet otomatis masuk daftar. Pratinjau impor menyebut cabang baru yang akan ditambahkan.
+- Mode Google Sheet: daftar tersimpan di tab `_Cabang` (kolom `Nama_Cabang`, `Entitas`, `Aktif`, `Keterangan`). Mode lokal: tersimpan di browser.
+
+## Bukti pembayaran
+
+Di panel **Detail** jadwal pembayaran, klik **Catat pembayaran & bukti**:
+
+- **Tanggal bayar** (default hari ini, tidak boleh setelah hari ini).
+- **File bukti** PDF/JPG/PNG/WEBP maksimal 10 MB (mode Google Sheet). File disimpan di folder Google Drive **Bukti Bayar Kalender** milik Admin (di samping spreadsheet, dipisah per tahun). Pengguna aktif di tab `_Pengguna` otomatis mendapat akses lihat ke folder itu.
+- Atau **link bukti** (Google Drive, OneDrive, dan sebagainya). Hanya link `http://`/`https://` yang diterima.
+- **Keterangan pembayaran**: nomor referensi transfer, bank, nama penerima.
+- **Tandai lunas** tercentang otomatis.
+
+Di Google Sheet, data ini tersimpan di kolom `Tgl_Bayar`, `Bukti_Bayar`, dan `Keterangan_Bayar` (dibuat otomatis saat pertama dipakai). Kontributor boleh mencatat bukti untuk jadwal milik orang lain selama `kontributor_boleh_centang` = TRUE, tetapi tetap tidak bisa mengubah isian lain. Kolom yang sama ikut diekspor dan bisa diimpor lewat CSV.
+
+## Rekap kebutuhan dana
+
+- Kartu **Kebutuhan dana** di sidebar kiri: total tagihan belum lunas yang jatuh tempo dalam 30 hari, 90 hari, atau 1 tahun ke depan, dirinci per kategori, plus yang terlambat.
+- **Rincian per bulan & cabang** membuka rekap 12 bulan ke depan (bulan dengan sisa tagihan tertinggi diberi tanda), dan rekap per cabang lengkap dengan entitas dan jatuh tempo terdekat. Klik nama bulan untuk membukanya di kalender. Tombol **Unduh CSV** menyimpan kedua tabel.
+- Rekap mengikuti filter kategori dan cabang di sidebar.
+
+## Pengingat & email harian
+
+**Pengaturan pengingat** (menu Kelola data, khusus Admin):
+
+- **Pengingat mulai**: jadwal masuk panel lonceng sejak H-berapa (default H-30).
+- **Pengingat awal sewa kantor**: khusus Pembayaran Sewa Kantor (default H-90), karena perpanjangan sewa biasanya perlu negosiasi jauh hari. Di panel lonceng tampil sebagai grup "Sewa: 31–90 hari ke depan".
+- **Email ringkasan harian** (mode Google Sheet): dikirim setiap hari pada jam yang dipilih ke penerima yang diisi (kosong = pemilik spreadsheet). Isi email: jadwal terlambat, jatuh tempo hari ini, 7 hari ke depan, serta pengingat awal H-30 dan H-14 (sewa juga H-60 dan H-90). Email tidak dikirim pada hari tanpa jadwal yang perlu diingatkan. Tombol **Kirim email uji ke saya** untuk mencoba.
+
+Email dikirim oleh Apps Script lewat pemicu terjadwal, jadi tetap berjalan walaupun tidak ada yang membuka kalender. Kuota Gmail: 100 email/hari untuk akun Gmail biasa, 1.500/hari untuk Google Workspace, jauh di atas kebutuhan satu email per hari.
+
 ## Format CSV (bebas)
 
 Tidak ada format khusus. Aplikasi mengenali kolom dari nama header-nya, dan **hanya kolom tanggal yang wajib**. Pemisah koma, titik koma (Excel Indonesia), dan tab dikenali otomatis. Contoh file jadwal sewa yang langsung bisa diunggah:
@@ -90,6 +134,7 @@ No;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;Durasi_Sewa;Catata
 | Judul | `Judul` | Opsional. Jika tidak ada, dibuat otomatis: `Sewa Pemuda Gedung A – Tahap 1`. |
 | Waktu | `Waktu`, `Jam` | Untuk meeting: `10:00-11:30`, `60 menit`. |
 | Catatan, Status | `Catatan`, `Status` | Status `Lunas`/`Selesai`/`Belum`. |
+| Bukti bayar | `Tgl_Bayar`, `Bukti_Bayar`, `Keterangan_Bayar` | Opsional. `Bukti_Bayar` harus berupa link http(s). |
 
 Kolom lain yang tidak dikenali tetap disimpan dan tampil sebagai info tambahan di panel detail.
 
@@ -116,7 +161,7 @@ Data contoh hanya dimuat sekali, saat aplikasi pertama kali dibuka di sebuah bro
 
 ### Ekspor
 
-**Ekspor semua ke CSV** menghasilkan file berpemisah titik koma dengan kolom `No;Kategori;Judul;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;PPN;PPh;Masa_Sewa;Waktu;Catatan;Status`, yang bisa langsung diimpor kembali.
+**Ekspor semua ke CSV** menghasilkan file berpemisah titik koma dengan kolom `No;Kategori;Judul;Cabang;Sub_Unit;Term_Tahap;Tanggal_Jatuh_Tempo;Nominal_IDR;PPN;PPh;Masa_Sewa;Waktu;Catatan;Status;Tgl_Bayar;Bukti_Bayar;Keterangan_Bayar`, yang bisa langsung diimpor kembali.
 
 ## Dua mode penyimpanan
 
@@ -161,7 +206,7 @@ Lakukan sekali saja dengan akun Google yang akan menjadi **Admin** (pemilik spre
 1. Di Google Sheet, buka **Ekstensi → Apps Script**.
 2. Hapus semua isi `Code.gs`, lalu tempel seluruh isi file `apps-script/Code.gs` dari proyek ini.
 3. Di bagian atas, ganti `TEMPEL_CLIENT_ID_DI_SINI.apps.googleusercontent.com` dengan Client ID dari Langkah 2, lalu klik ikon **Simpan**.
-4. Di toolbar editor, pilih fungsi **siapkanSheet**, lalu klik **Run** dan izinkan aksesnya. Tab Pembayaran Sewa Kantor, Pembayaran Rutin, Jadwal Meeting, Task & Report, serta tab sistem (`_Kategori`, `_Pengguna`, `_Riwayat`, `_Pengaturan`) langsung terbentuk, dan lembar kosong "Sheet1" dihapus.
+4. Di toolbar editor, pilih fungsi **siapkanSheet**, lalu klik **Run** dan izinkan semua akses yang diminta (Google Sheet, Google Drive untuk bukti bayar, Gmail untuk email pengingat, dan pemicu terjadwal). Tab Pembayaran Sewa Kantor, Pembayaran Rutin, Jadwal Meeting, Task & Report, serta tab sistem (`_Kategori`, `_Cabang`, `_Pengguna`, `_Riwayat`, `_Pengaturan`) langsung terbentuk, dan lembar kosong "Sheet1" dihapus.
 5. Klik **Deploy → New deployment**, klik ikon gerigi, lalu pilih **Web app**:
    * Execute as: **Me**
    * Who has access: **Anyone**
@@ -209,9 +254,32 @@ Jika sebelumnya Anda memakai mode lokal di browser yang sama, di **Kelola data**
 * Baris yang belum bisa ditampilkan (misalnya tanggal kosong) diberi keterangan di kolom `Catatan_Sistem` dan ditampilkan ke Admin di tab Aktivitas.
 * Perubahan butuh koneksi internet. Jika koneksi terputus saat menyimpan, perubahan itu dibatalkan dan Anda diberi tahu. Kalender tetap menampilkan data terakhir.
 
+### Isi tab `_Pengaturan`
+
+Baris yang belum ada ditambahkan otomatis; nilai yang sudah diisi tidak pernah ditimpa. Sebagian juga bisa diubah lewat **Pengaturan pengingat** di kalender.
+
+| Kunci | Bawaan | Keterangan |
+|---|---|---|
+| `mode_akses` | `daftar_email` | `domain` = semua email `domain_kantor` boleh masuk |
+| `domain_kantor` | (kosong) | Mis. `wmcenter.id` |
+| `peran_default_domain` | `Kontributor` | Peran email domain yang tidak tercantum di `_Pengguna` |
+| `kontributor_boleh_centang` | TRUE | Kontributor boleh centang Lunas/Selesai dan catat bukti bayar jadwal orang lain |
+| `interval_sinkron_detik` | 20 | 10–300 |
+| `hari_pengingat` | 30 | Pengingat semua jadwal mulai H-berapa |
+| `hari_pengingat_sewa` | 90 | Pengingat awal sewa mulai H-berapa |
+| `email_pengingat` | FALSE | TRUE = kirim email harian |
+| `email_penerima` | (kosong) | Pisahkan dengan koma; kosong = pemilik spreadsheet |
+| `jam_email` | 7 | Jam kirim (0–23) |
+
+Jika `email_pengingat` atau `jam_email` diubah langsung di Sheet (bukan lewat kalender), jalankan fungsi **aturPengingatEmail** sekali di editor Apps Script agar jadwal email ikut diperbarui.
+
 ### Memperbarui Apps Script di kemudian hari
 
-Setelah mengganti isi `Code.gs`, buka **Deploy → Manage deployments**, klik ikon pensil, pilih **Version: New version**, lalu **Deploy**. URL Web App tidak berubah.
+1. Buka Google Sheet → **Ekstensi → Apps Script**, hapus seluruh isi `Code.gs`, tempel isi `apps-script/Code.gs` yang baru, lalu **Simpan**. Pastikan `GOOGLE_CLIENT_ID` tetap berisi Client ID Anda.
+2. Pilih fungsi **siapkanSheet** → **Run**. Bila Google meminta izin baru (misalnya Drive atau Gmail), klik **Review permissions → Advanced → Go to … (unsafe) → Allow**.
+3. **Deploy → Manage deployments**, klik ikon pensil, pilih **Version: New version**, lalu **Deploy**. URL Web App tidak berubah, jadi `config.js` tidak perlu diubah.
+
+Selama langkah ini belum dilakukan, kalender tetap berjalan, tetapi Admin melihat peringatan "Apps Script belum diperbarui" dan fitur yang membutuhkan Apps Script baru (Kelola cabang, unggah file bukti, email) menampilkan pesan yang menjelaskannya.
 
 ## Penyimpanan di mode lokal
 
