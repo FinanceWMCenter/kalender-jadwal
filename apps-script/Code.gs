@@ -13,7 +13,7 @@
 
 const CONFIG = {
   // OAuth Client ID dari Google Cloud Console (berakhiran .apps.googleusercontent.com)
-  GOOGLE_CLIENT_ID: 'TEMPEL_CLIENT_ID_DI_SINI.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '174841001822-mvoga9p4jmlmuiar3rfd7suh6vb0uh1e.apps.googleusercontent.com',
   SESSION_DAYS: 30,       // lama login tersimpan di perangkat
   HISTORY_LIMIT: 60,      // jumlah aktivitas terbaru yang dikirim ke kalender
 };

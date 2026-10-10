@@ -7,8 +7,8 @@
    ============================================================= */
 window.CALENDAR_CONFIG = {
   // URL Web App dari Apps Script (berakhiran /exec)
-  appsScriptUrl: '',
+  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbxeYOdIrln80EKPJOLLypocvt_llkja6bmLuEc5xV4B4XP_NfnYlRLphICnUEjY9LMV/exec',
 
   // OAuth Client ID dari Google Cloud Console (berakhiran .apps.googleusercontent.com)
-  googleClientId: '',
+  googleClientId: '174841001822-mvoga9p4jmlmuiar3rfd7suh6vb0uh1e.apps.googleusercontent.com',
 };
