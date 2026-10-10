@@ -662,6 +662,9 @@
     const unit = { month: 'bulan', week: 'minggu', day: 'hari' }[state.view];
     els.btnPrev.setAttribute('aria-label', `${unit[0].toUpperCase()}${unit.slice(1)} sebelumnya`);
     els.btnNext.setAttribute('aria-label', `${unit[0].toUpperCase()}${unit.slice(1)} berikutnya`);
+    const wheelHint = state.view === 'month' ? 'gulir mouse' : 'Shift + gulir mouse';
+    els.btnPrev.title = `${unit[0].toUpperCase()}${unit.slice(1)} sebelumnya (← atau ${wheelHint})`;
+    els.btnNext.title = `${unit[0].toUpperCase()}${unit.slice(1)} berikutnya (→ atau ${wheelHint})`;
     els.logoDay.textContent = String(new Date().getDate());
   }
 
@@ -2490,6 +2493,134 @@
     return Boolean(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
   }
 
+  /* ---------- Navigasi dengan mouse / touchpad / sentuhan ----------
+     - Tampilan bulan: gulir roda mouse ke bawah = bulan berikutnya, ke atas = bulan sebelumnya.
+       Jika grid bulan sedang bisa digulir (layar pendek), gulir dulu sampai ujung, lalu gulir lagi.
+     - Tampilan minggu/hari: roda mouse tetap menggulir jam. Ganti periode dengan Shift + roda,
+       geser dua jari ke kiri/kanan di touchpad, atau gulir di atas baris nama hari.
+     - Tombol samping mouse (Back/Forward) = periode sebelumnya/berikutnya.
+     - Layar sentuh: usap ke kiri/kanan.
+     - Kalender kecil di sidebar: gulir di atasnya untuk ganti bulan. */
+  function bindPointerNav() {
+    const GAP_MS = 260;          // jeda yang memisahkan satu gerakan gulir dengan berikutnya
+    const MOUSE_LOCK_MS = 260;   // jarak minimum antar-pergantian untuk roda mouse
+    const PAD_LOCK_MS = 450;     // touchpad: satu usapan = satu pergantian
+    const PAD_THRESHOLD = 70;    // akumulasi piksel touchpad sebelum berganti
+
+    const navBlocked = () => Boolean(document.querySelector('dialog[open]')) || anyPopoverOpen() || drag !== null
+      || !els.loginScreen.hidden;
+
+    function wheelDelta(e) {
+      const unit = e.deltaMode === 1 ? 40 : (e.deltaMode === 2 ? 800 : 1);
+      return { x: e.deltaX * unit, y: e.deltaY * unit };
+    }
+
+    // Membuat pengatur gulir dengan logika "satu gerakan = satu pergantian"
+    function makeWheelNav(onStep) {
+      let last = 0;
+      let lockUntil = 0;
+      let acc = 0;
+      let gestureStart = true;
+      return function handle(delta, isPad, canStep) {
+        const now = Date.now();
+        gestureStart = now - last > GAP_MS;
+        last = now;
+        if (gestureStart) acc = 0;
+        if (now < lockUntil) {
+          if (isPad) lockUntil = now + 200; // abaikan sisa inersia touchpad
+          return true;
+        }
+        if (!canStep(Math.sign(delta), gestureStart)) return false;
+        acc += delta;
+        if (!isPad || Math.abs(acc) >= PAD_THRESHOLD) {
+          onStep(Math.sign(acc));
+          acc = 0;
+          lockUntil = now + (isPad ? PAD_LOCK_MS : MOUSE_LOCK_MS);
+        }
+        return true;
+      };
+    }
+
+    // Ingat apakah grid bulan sudah di ujung saat gerakan dimulai,
+    // supaya inersia gulir tidak langsung melompat ke bulan lain.
+    let edgeAtStart = { up: true, down: true };
+    function monthEdge() {
+      const sc = els.view.querySelector('.month');
+      if (!sc) return { up: true, down: true };
+      return {
+        up: sc.scrollTop <= 1,
+        down: sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1,
+      };
+    }
+
+    const viewNav = makeWheelNav((dir) => shift(dir));
+
+    els.view.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey || navBlocked()) return;
+      const { x, y } = wheelDelta(e);
+      const horizontal = Math.abs(x) > Math.abs(y);
+      const isPad = e.deltaMode === 0 && Math.max(Math.abs(x), Math.abs(y)) < 50;
+      const onHeader = Boolean(e.target.closest('.tg__header'));
+
+      let delta;
+      let free = false; // true = tidak perlu cek ujung gulir
+      if (horizontal) { delta = x; free = true; }
+      else if (e.shiftKey) { delta = y; free = true; }
+      else if (state.view === 'month') { delta = y; }
+      else if (onHeader) { delta = y; free = true; }
+      else return; // minggu/hari: roda biasa tetap menggulir jam
+
+      if (!delta) return;
+      const handled = viewNav(delta, isPad, (dir, isStart) => {
+        if (free) return true;
+        if (isStart) edgeAtStart = monthEdge();
+        return dir > 0 ? edgeAtStart.down : edgeAtStart.up;
+      });
+      if (handled) e.preventDefault();
+    }, { passive: false });
+
+    // Kalender kecil di sidebar kiri
+    const miniNav = makeWheelNav((dir) => {
+      state.miniCursor = addMonthsClamped(state.miniCursor, dir, 1);
+      renderMiniCal(buildIndex());
+    });
+    els.miniCal.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey || navBlocked()) return;
+      const sb = els.sidebarLeft;
+      if (sb.scrollHeight > sb.clientHeight + 1 && !e.shiftKey) return; // sidebar sedang bisa digulir
+      const { x, y } = wheelDelta(e);
+      const delta = Math.abs(x) > Math.abs(y) ? x : y;
+      if (!delta) return;
+      const isPad = e.deltaMode === 0 && Math.abs(delta) < 50;
+      if (miniNav(delta, isPad, () => true)) e.preventDefault();
+    }, { passive: false });
+
+    // Tombol samping mouse (Back = 3, Forward = 4)
+    const isSideButton = (e) => e.button === 3 || e.button === 4;
+    document.addEventListener('mousedown', (e) => { if (isSideButton(e) && !navBlocked()) e.preventDefault(); });
+    document.addEventListener('mouseup', (e) => {
+      if (!isSideButton(e) || navBlocked()) return;
+      e.preventDefault();
+      shift(e.button === 3 ? -1 : 1);
+    });
+
+    // Usap di layar sentuh
+    let touch = null;
+    els.view.addEventListener('touchstart', (e) => {
+      touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null;
+    }, { passive: true });
+    els.view.addEventListener('touchmove', (e) => { if (e.touches.length > 1) touch = null; }, { passive: true });
+    els.view.addEventListener('touchend', (e) => {
+      if (!touch || navBlocked()) { touch = null; return; }
+      const p = e.changedTouches[0];
+      const dx = p.clientX - touch.x;
+      const dy = p.clientY - touch.y;
+      const dt = Date.now() - touch.t;
+      touch = null;
+      if (dt < 700 && Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) shift(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  }
+
   function bindEvents() {
     // Navbar
     els.btnToggleLeft.addEventListener('click', () => {
@@ -3603,6 +3734,7 @@
     syncMini();
     buildCategoryOptions();
     bindEvents();
+    bindPointerNav();
     setFavicon();
     applyRoleUI();
     render();

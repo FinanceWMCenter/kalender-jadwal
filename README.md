@@ -47,6 +47,15 @@ Membuka `index.html` langsung dengan klik dua kali juga bisa, tetapi notifikasi 
 
 Pintasan keyboard: `T` hari ini, `M` `W` `D` ganti tampilan, `←` `→` geser periode, `C` buat event, `Esc` tutup popover.
 
+Navigasi dengan mouse dan touchpad:
+
+- **Tampilan bulan**: gulir roda mouse ke bawah untuk bulan berikutnya, ke atas untuk bulan sebelumnya. Di layar pendek yang grid bulannya bisa digulir, gulir dulu sampai ujung, lalu gulir sekali lagi.
+- **Tampilan minggu/hari**: roda mouse tetap menggulir jam. Ganti minggu/hari dengan **Shift + gulir**, atau gulir di atas baris nama hari.
+- **Touchpad**: usap dua jari ke kiri/kanan di semua tampilan. Satu usapan = satu periode.
+- **Tombol samping mouse** (Back/Forward): periode sebelumnya/berikutnya.
+- **Layar sentuh (HP/tablet)**: usap ke kiri/kanan.
+- **Kalender kecil** di sidebar kiri: gulir di atasnya untuk mengganti bulan.
+
 ## Kategori
 
 Empat kategori bawaan selalu tersedia: Pembayaran Sewa Kantor, Pembayaran Rutin, Jadwal Meeting, dan Task & Report. Kategori lain bisa ditambah tanpa batas:

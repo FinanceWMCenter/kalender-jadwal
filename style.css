@@ -358,6 +358,7 @@ kbd {
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
   overflow: hidden;
+  overscroll-behavior-x: none; /* usapan touchpad dipakai ganti periode, bukan kembali ke halaman sebelumnya */
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line-soft);
